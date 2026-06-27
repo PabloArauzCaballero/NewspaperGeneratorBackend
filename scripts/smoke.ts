@@ -111,7 +111,7 @@ async function main() {
     assert(passwordUser, 'Admin demo user is missing');
     assert(await bcrypt.compare('DemoPassword2026!', passwordUser.password_hash), 'Admin demo password hash does not match expected seed credentials');
 
-    const [premiumRule] = await sequelize.query<{ body_visible_without_subscription: string; ads_on_premium_articles: string }>(
+    const [premiumRule] = await sequelize.query<{ premium_articles_for_paywall: string; premium_search_body_leaks: string; ads_on_premium_articles: string }>(
       `
       SELECT
         (
@@ -119,16 +119,19 @@ async function main() {
           FROM articles a
           WHERE a.access_type = 'premium'
             AND a.status = 'published'
-            AND NOT EXISTS (
-              SELECT 1
-              FROM subscriptions s
-              INNER JOIN users u ON u.id = s.user_id
-              WHERE u.email = 'lector.demo@periodico.test'
-                AND s.status = 'active'
-                AND s.starts_at <= now()
-                AND s.ends_at > now()
+        )::text AS premium_articles_for_paywall,
+        (
+          SELECT count(*)
+          FROM search_index_documents sid
+          INNER JOIN articles a ON a.id = sid.article_id
+          WHERE a.access_type = 'premium'
+            AND (
+              sid.payload ? 'body'
+              OR sid.payload ? 'bodyPlaintext'
+              OR sid.payload ? 'content'
+              OR lower(sid.payload::text) LIKE '%cuerpo premium demo protegido%'
             )
-        )::text AS body_visible_without_subscription,
+        )::text AS premium_search_body_leaks,
         (
           SELECT count(*)
           FROM advertisements ad
@@ -140,7 +143,8 @@ async function main() {
       { type: QueryTypes.SELECT }
     );
     assert(premiumRule, 'Premium rule query failed');
-    assert(Number(premiumRule.body_visible_without_subscription) >= 1, 'Expected premium article to exist for paywall checks');
+    assert(Number(premiumRule.premium_articles_for_paywall) >= 1, 'Expected premium article to exist for paywall checks');
+    assert(Number(premiumRule.premium_search_body_leaks) === 0, 'Premium article body must not be leaked into search index payloads');
     assert(Number(premiumRule.ads_on_premium_articles) === 0, 'Ads must remain restricted to public contexts in current rules');
 
     const [notificationRule] = await sequelize.query<{ premium_notification_non_premium_recipients: string }>(

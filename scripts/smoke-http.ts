@@ -16,6 +16,7 @@ type LoginResponse = {
 
 const baseUrl = (process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 3000}/${process.env.API_PREFIX || 'api/v1'}`).replace(/\/$/, '');
 const password = process.env.SMOKE_DEMO_PASSWORD || 'DemoPassword2026!';
+const smokeRunId = `smoke-http-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -26,6 +27,7 @@ async function request<T>(method: string, path: string, options: { token?: strin
     method,
     headers: {
       Accept: 'application/json',
+      'User-Agent': smokeRunId,
       ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
       ...(options.token ? { Authorization: `Bearer ${options.token}` } : {})
     },
@@ -42,6 +44,19 @@ async function request<T>(method: string, path: string, options: { token?: strin
 async function login(email: string): Promise<LoginResponse> {
   return (await request<LoginResponse>('POST', '/auth/login', {
     body: { email, password },
+    expectedStatus: 201
+  })).body;
+}
+
+async function registerSmokeReader(): Promise<LoginResponse> {
+  const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const email = `smoke.checkout.${suffix}@periodico.test`;
+  return (await request<LoginResponse>('POST', '/auth/register', {
+    body: {
+      fullName: `Smoke Checkout ${suffix}`,
+      email,
+      password
+    },
     expectedStatus: 201
   })).body;
 }
@@ -110,7 +125,7 @@ async function main() {
 
   const admin = await login('admin.demo@periodico.test');
   const editor = await login('editor.demo@periodico.test');
-  const reader = await login('lector.demo@periodico.test');
+  const reader = await registerSmokeReader();
   let premium = await login('premium.demo@periodico.test');
 
   assert(typeof admin.refreshToken === 'string' && admin.refreshToken.length > 40, 'Login must return admin refresh token');
@@ -218,6 +233,9 @@ async function main() {
   const plans = await request<unknown[]>('GET', '/subscriptions/plans');
   firstArray(plans.body, 'subscription plans');
 
+  // Use the same ephemeral free reader for checkout only after all free-reader
+  // paywall checks have already passed. This keeps seeded demo users untouched
+  // and makes repeated smoke runs independent from previous subscriptions.
   const checkout = await request<Record<string, unknown>>('POST', '/subscriptions/checkout', {
     token: reader.accessToken,
     body: { planId: (plans.body[0] as any).id },

@@ -1,6 +1,7 @@
 import 'dotenv/config';
 
 const baseUrl = (process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 3000}/${process.env.API_PREFIX || 'api/v1'}`).replace(/\/$/, '');
+const securityRunId = `security-smoke-rate-limit-client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -12,7 +13,7 @@ async function request(method: string, path: string, body?: unknown) {
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/json',
-      'User-Agent': `security-smoke-${Date.now()}`,
+      'User-Agent': securityRunId,
       'X-Request-Id': 'security-smoke-request-123'
     },
     body: body === undefined ? undefined : JSON.stringify(body)
@@ -39,7 +40,8 @@ async function main() {
   assert(bad.body?.requestId, 'Expected standardized error response to include requestId');
   assert(Array.isArray(bad.body?.issues), 'Expected validation error response to include issues');
 
-  const attempts = Number(process.env.SECURITY_SMOKE_RATE_LIMIT_ATTEMPTS ?? 12);
+  const configuredAuthMax = Number(process.env.RATE_LIMIT_AUTH_MAX ?? 8);
+  const attempts = Number(process.env.SECURITY_SMOKE_RATE_LIMIT_ATTEMPTS ?? configuredAuthMax + 4);
   let saw429 = false;
   for (let index = 0; index < attempts; index += 1) {
     const result = await request('POST', '/auth/login', { email: `missing-${Date.now()}-${index}@periodico.test`, password: 'wrong-password' });

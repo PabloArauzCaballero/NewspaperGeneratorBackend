@@ -9,28 +9,30 @@
   },
   "scripts": {
     "build": "nest build",
-    "start": "node dist/main.js",
+    "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "db:migrate": "sequelize-cli db:migrate",
     "db:seed": "sequelize-cli db:seed:all",
     "db:undo-seed": "sequelize-cli db:seed:undo:all",
     "db:undo": "sequelize-cli db:migrate:undo:all",
-    "db:reset": "npm run db:undo && npm run db:migrate && npm run db:seed",
+    "db:reset": "yarn db:undo && yarn db:migrate && yarn db:seed",
     "typecheck": "tsc --noEmit",
-    "test:smoke": "npm run test:smoke:db",
+    "test:smoke": "yarn test:smoke:db",
     "test:smoke:db": "tsx scripts/smoke.ts",
     "test:smoke:http": "tsx scripts/smoke-http.ts",
-    "test:smoke:all": "npm run test:smoke:db && npm run test:smoke:http",
+    "test:smoke:all": "yarn test:smoke:db && yarn test:smoke:http",
     "backup:neon": "tsx scripts/backup-to-neon.ts",
-    "start:worker:events": "tsx scripts/workers/events-worker.ts",
-    "start:worker:events:once": "tsx scripts/workers/events-worker.ts --once",
+    "start:worker:events": "ts-node scripts/workers/events-worker.ts",
+    "start:worker:events:once": "ts-node scripts/workers/events-worker.ts --once",
     "test:unit": "tsx --test test/unit/**/*.test.ts",
     "test:contracts": "tsx --test test/contracts/**/*.test.ts",
     "test:security": "tsx scripts/security-smoke.ts",
-    "test:all": "npm run db:validate && npm run postman:validate && npm audit --audit-level=moderate && npm run typecheck && npm run build && npm run test:unit && npm run test:contracts && npm run test:smoke:db && npm run test:smoke:http && npm run test:security && npm run start:worker:events:once",
+    "test:all": "yarn db:validate && yarn postman:validate && yarn audit:moderate && yarn typecheck && yarn build && yarn test:unit && yarn test:contracts && yarn test:smoke:db && yarn test:smoke:http && yarn test:security && yarn start:worker:events:once",
     "db:validate": "tsx scripts/validate-db.ts",
-    "postman:validate": "python3 -m json.tool postman/NewspaperGeneratorBackend.postman_collection.json >/dev/null && python3 -m json.tool postman/NewspaperGeneratorBackend.local.postman_environment.json >/dev/null"
+    "postman:validate": "tsx scripts/validate-postman.ts",
+    "start:prod": "node dist/main.js",
+    "audit:moderate": "yarn npm audit --severity moderate"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.27",
@@ -69,5 +71,6 @@
     "js-yaml": "^5.2.0",
     "uuid": "^11.1.1",
     "glob": "^13.0.6"
-  }
+  },
+  "packageManager": "yarn@4.9.2"
 }

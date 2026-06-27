@@ -98,7 +98,16 @@ module.exports = {
           (:readerRole, 'reader', 'Lector registrado')
         ON CONFLICT (id) DO NOTHING;
         `,
-        { replacements: ids.roles, transaction }
+        {
+          replacements: {
+            adminRole: ids.roles.admin,
+            editorRole: ids.roles.editor,
+            journalistRole: ids.roles.journalist,
+            commercialEditorRole: ids.roles.commercialEditor,
+            readerRole: ids.roles.reader
+          },
+          transaction
+        }
       );
 
       await queryInterface.sequelize.query(

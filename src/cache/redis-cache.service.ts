@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import crypto from 'node:crypto';
@@ -16,10 +16,10 @@ export class RedisCacheService implements OnModuleDestroy {
   private readonly prefix: string;
   private readonly defaultTtlSeconds: number;
 
-  constructor(private readonly configService: ConfigService) {
-    const redisUrl = this.configService.get<string>('REDIS_URL');
-    this.prefix = this.normalizePart(this.configService.get<string>('CACHE_PREFIX', 'newspaper'));
-    this.defaultTtlSeconds = this.configService.get<number>('CACHE_TTL_SECONDS', 300);
+  constructor(@Optional() @Inject(ConfigService) private readonly configService?: ConfigService) {
+    const redisUrl = this.configService?.get<string>('REDIS_URL') ?? process.env.REDIS_URL;
+    this.prefix = this.normalizePart(this.configService?.get<string>('CACHE_PREFIX', 'newspaper') ?? process.env.CACHE_PREFIX ?? 'newspaper');
+    this.defaultTtlSeconds = Number(this.configService?.get<number>('CACHE_TTL_SECONDS', 300) ?? process.env.CACHE_TTL_SECONDS ?? 300);
 
     this.client = redisUrl
       ? new Redis(redisUrl, {
