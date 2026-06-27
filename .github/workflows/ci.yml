@@ -1,0 +1,82 @@
+name: Backend Quality Gate
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: newspaper
+          POSTGRES_PASSWORD: newspaper
+          POSTGRES_DB: newspaper_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U newspaper -d newspaper_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      PORT: 3000
+      API_PREFIX: api/v1
+      DATABASE_URL: postgres://newspaper:newspaper@localhost:5432/newspaper_test
+      DATABASE_SSL: 'false'
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci-quality-gate-secret-with-more-than-32-characters
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN_DAYS: 30
+      CORS_ORIGINS: http://localhost:3000
+      RATE_LIMIT_ENABLED: 'true'
+      RATE_LIMIT_WINDOW_SECONDS: 60
+      RATE_LIMIT_AUTH_MAX: 8
+      SECURITY_SMOKE_RATE_LIMIT_ATTEMPTS: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run db:validate
+      - run: npm run postman:validate
+      - run: npm audit --audit-level=moderate
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run test:unit
+      - run: npm run test:contracts
+      - run: npm run db:migrate
+      - run: npm run db:seed
+      - run: npm run test:smoke:db
+      - name: Start API
+        run: |
+          npm run start > /tmp/newspaper-api.log 2>&1 &
+          echo $! > /tmp/newspaper-api.pid
+          for i in {1..30}; do
+            if curl -fsS http://localhost:3000/api/v1/health/live >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          cat /tmp/newspaper-api.log
+          exit 1
+      - run: npm run test:smoke:http
+      - run: npm run test:security
+      - run: npm run start:worker:events:once
+      - name: Stop API
+        if: always()
+        run: |
+          if [ -f /tmp/newspaper-api.pid ]; then kill $(cat /tmp/newspaper-api.pid) || true; fi

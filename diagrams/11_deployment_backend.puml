@@ -1,0 +1,113 @@
+@startuml
+title Diagrama de despliegue backend - Periódico Digital Premium Event-Driven
+
+skinparam nodeStyle rectangle
+skinparam ArrowColor #333333
+left to right direction
+
+cloud "Internet" as Internet
+
+node "AWS / Cloud Provider" as Cloud {
+
+  node "Edge & Security" as Edge {
+    [WAF]
+    [Load Balancer / API Gateway]
+  }
+
+  node "Private Application Network" as AppNet {
+    node "Container Service\nECS Fargate / Kubernetes / Render" as Containers {
+      artifact "backend-api\nNestJS" as BackendAPI
+      artifact "outbox-dispatcher" as OutboxDispatcher
+      artifact "notification-worker" as NotificationWorker
+      artifact "ads-worker" as AdsWorker
+      artifact "cache-search-worker" as CacheSearchWorker
+      artifact "analytics-worker" as AnalyticsWorker
+      artifact "subscription-worker" as SubscriptionWorker
+    }
+
+    queue "Event Bus / Queue\nSQS/SNS/EventBridge/RabbitMQ" as Queue
+    database "PostgreSQL RDS" as RDS
+    database "Redis\nCache + rate limit" as Redis
+  }
+
+  node "Storage & Delivery" as StorageNet {
+    folder "S3 Bucket\nmedia assets" as S3
+    node "CDN / CloudFront" as CDN
+  }
+
+  node "Security & Ops" as Ops {
+    [Secrets Manager]
+    [CloudWatch Logs]
+    [Metrics / Alerts]
+    [Backups]
+  }
+}
+
+cloud "External Providers" as External {
+  [Payment Provider]
+  [Email Provider]
+  [Push/Web Notification Provider]
+  [Optional Search Service]
+}
+
+Internet --> [WAF]
+[WAF] --> [Load Balancer / API Gateway]
+[Load Balancer / API Gateway] --> BackendAPI
+
+BackendAPI --> RDS : SQL
+BackendAPI --> Redis : cache/rate limit
+BackendAPI --> S3 : upload media
+BackendAPI --> Queue : publish optional
+BackendAPI --> [Secrets Manager] : secrets
+BackendAPI --> [CloudWatch Logs] : logs
+
+OutboxDispatcher --> RDS : read event_outbox
+OutboxDispatcher --> Queue : publish events
+Queue --> NotificationWorker
+Queue --> AdsWorker
+Queue --> CacheSearchWorker
+Queue --> AnalyticsWorker
+Queue --> SubscriptionWorker
+
+NotificationWorker --> RDS
+NotificationWorker --> [Email Provider]
+NotificationWorker --> [Push/Web Notification Provider]
+AdsWorker --> RDS
+CacheSearchWorker --> RDS
+CacheSearchWorker --> Redis
+CacheSearchWorker --> [Optional Search Service]
+AnalyticsWorker --> RDS
+SubscriptionWorker --> RDS
+SubscriptionWorker --> Queue
+
+[Payment Provider] --> BackendAPI : webhooks /payments/webhook
+CDN --> S3 : serve media
+Internet --> CDN : media delivery
+
+RDS --> [Backups]
+BackendAPI --> [Metrics / Alerts]
+OutboxDispatcher --> [Metrics / Alerts]
+NotificationWorker --> [Metrics / Alerts]
+AdsWorker --> [Metrics / Alerts]
+
+note right of RDS
+Tablas críticas:
+- articles
+- subscriptions
+- event_outbox
+- event_inbox
+- notifications
+- advertisement_impressions
+end note
+
+note bottom of BackendAPI
+El backend nunca entrega contenido premium completo
+si no hay login + suscripción activa.
+end note
+
+note bottom of AdsWorker
+En artículos premium:
+cero publicidad y cero impresiones.
+end note
+
+@enduml

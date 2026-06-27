@@ -1,0 +1,17 @@
+# PENDIENTES_PERIODICO
+
+| ID | Estado | Tipo | Prioridad | Área | Pendiente | Impacto si no se resuelve | Acción requerida | Responsable | Archivo relacionado |
+|---|---|---|---|---|---|---|---|---|---|
+| PERIODICO-PEND-001 | Abierto | Decisión de negocio | Alta | Producto | Definir nombre oficial del proyecto/periódico | Documentación y branding quedan genéricos | Confirmar nombre | Cliente/Producto | SYSTEM_INFO_PERIODICO.md |
+| PERIODICO-PEND-002 | Abierto | Integración externa | Alta | Pagos | Definir proveedor de pagos para suscripciones | No se puede implementar checkout real | Confirmar proveedor y documentación | Negocio/Técnico | PROJECT_BRIEF_PERIODICO.md |
+| PERIODICO-PEND-003 | Abierto | Decisión de negocio | Alta | Suscripciones | Definir planes, precios, moneda y duración | No se puede activar venta premium real | Confirmar planes | Negocio | SYSTEM_INFO_PERIODICO.md |
+| PERIODICO-PEND-004 | Abierto | Decisión de negocio | Media | Premium | Definir cuánto contenido premium se muestra como vista previa | Riesgo de mostrar demasiado o muy poco | Confirmar política de paywall | Editorial/Negocio | SYSTEM_INFO_PERIODICO.md |
+| PERIODICO-PEND-005 | Abierto | Decisión de negocio | Media | Comentarios | Definir moderación previa o posterior | Afecta UX y carga operativa | Confirmar política | Editorial | SYSTEM_INFO_PERIODICO.md |
+| PERIODICO-PEND-006 | Abierto | Decisión de negocio | Media | Reacciones | Definir lista final de reacciones | Puede cambiar modelo y UI | Confirmar catálogo | Producto | SYSTEM_INFO_PERIODICO.md |
+| PERIODICO-PEND-007 | Abierto | Decisión de negocio | Alta | Publicidad | Definir ubicaciones exactas, dimensiones y peso máximo de anuncios | Riesgo de afectar legibilidad/reputación | Confirmar guía comercial y visual | Comercial/Diseño | SYSTEM_INFO_PERIODICO.md |
+| PERIODICO-PEND-008 | Abierto | Seguridad/privacidad | Alta | Legal | Definir país/marco legal y política de privacidad/retención | Riesgo legal y de datos personales | Validar con legal | Cliente/Legal | SYSTEM_INFO_PERIODICO.md |
+| PERIODICO-PEND-009 | Abierto | Decisión de negocio | Media | Editorial | Definir si periodistas pueden publicar o solo editores | Afecta RBAC y flujo editorial | Confirmar flujo de aprobación | Editorial | PROJECT_BRIEF_PERIODICO.md |
+| PERIODICO-PEND-010 | Abierto | Regla técnica | Media | Multimedia | Definir si videos se suben al sistema o se enlazan desde plataforma externa | Afecta costos, storage y performance | Confirmar estrategia multimedia | Técnico/Editorial | SYSTEM_INFO_PERIODICO.md |
+| PERIODICO-BE-PEND-001 | Abierto | Decisión de negocio | Alta | Pagos | BLOQUEANTE_PERIODICO: definir proveedor real de pagos, renovación, cancelación y reembolso | No se puede implementar checkout/webhooks productivos | Confirmar proveedor y política comercial | Cliente/Product Owner | docs/pending/pending-items.md |
+| PERIODICO-BE-PEND-002 | Abierto | Arquitectura | Media | Event-driven | PENDIENTE_PERIODICO: implementar outbox dispatcher y consumidores idempotentes | Los eventos quedan modelados pero no procesados en background real | Implementar worker en fase event-driven | Backend | docs/architecture/flows.md |
+| PERIODICO-BE-PEND-003 | Abierto | Decisión comercial | Media | Publicidad | PENDIENTE_PERIODICO: definir dimensiones, peso máximo y ubicaciones finales de anuncios | Riesgo de afectar reputación/legibilidad | Confirmar guía comercial y visual | Cliente/Comercial | docs/architecture/assumptions.md |

@@ -1,0 +1,363 @@
+@startuml
+title Diagrama relacional ER event-driven - Periódico digital premium
+
+left to right direction
+skinparam linetype ortho
+skinparam packageStyle rectangle
+
+entity "users" as users {
+  * id : uuid <<PK>>
+  --
+  full_name : varchar
+  email : varchar <<UNIQUE>>
+  password_hash : varchar
+  status : varchar
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity "roles" as roles {
+  * id : uuid <<PK>>
+  --
+  name : varchar <<UNIQUE>>
+  description : varchar
+}
+
+entity "user_roles" as user_roles {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  role_id : uuid <<FK>>
+  created_at : timestamp
+}
+
+entity "subscription_plans" as subscription_plans {
+  * id : uuid <<PK>>
+  --
+  name : varchar
+  description : text
+  price : decimal
+  currency : varchar
+  duration_days : int
+  is_active : boolean
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity "subscriptions" as subscriptions {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  plan_id : uuid <<FK>>
+  status : varchar
+  starts_at : timestamp
+  ends_at : timestamp
+  cancelled_at : timestamp
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity "payment_transactions" as payment_transactions {
+  * id : uuid <<PK>>
+  --
+  subscription_id : uuid <<FK>>
+  provider : varchar
+  external_reference : varchar <<UNIQUE>>
+  amount : decimal
+  currency : varchar
+  status : varchar
+  paid_at : timestamp
+  created_at : timestamp
+}
+
+entity "categories" as categories {
+  * id : uuid <<PK>>
+  --
+  name : varchar
+  slug : varchar <<UNIQUE>>
+  description : text
+  is_active : boolean
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity "articles" as articles {
+  * id : uuid <<PK>>
+  --
+  author_id : uuid <<FK>>
+  category_id : uuid <<FK>>
+  title : varchar
+  slug : varchar <<UNIQUE>>
+  summary : text
+  body : text
+  audio_transcript : text
+  article_type : varchar
+  access_type : varchar
+  status : varchar
+  comments_enabled : boolean
+  reactions_enabled : boolean
+  published_at : timestamp
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity "article_revisions" as article_revisions {
+  * id : uuid <<PK>>
+  --
+  article_id : uuid <<FK>>
+  edited_by_user_id : uuid <<FK>>
+  title_snapshot : varchar
+  body_snapshot : text
+  change_reason : text
+  created_at : timestamp
+}
+
+entity "tags" as tags {
+  * id : uuid <<PK>>
+  --
+  name : varchar
+  slug : varchar <<UNIQUE>>
+  created_at : timestamp
+}
+
+entity "article_tags" as article_tags {
+  * id : uuid <<PK>>
+  --
+  article_id : uuid <<FK>>
+  tag_id : uuid <<FK>>
+}
+
+entity "media_assets" as media_assets {
+  * id : uuid <<PK>>
+  --
+  uploaded_by_user_id : uuid <<FK>>
+  media_type : varchar
+  url : text
+  caption : varchar
+  alt_text : varchar
+  mime_type : varchar
+  size_bytes : bigint
+  created_at : timestamp
+}
+
+entity "article_media" as article_media {
+  * id : uuid <<PK>>
+  --
+  article_id : uuid <<FK>>
+  media_asset_id : uuid <<FK>>
+  display_order : int
+  is_cover : boolean
+}
+
+entity "comments" as comments {
+  * id : uuid <<PK>>
+  --
+  article_id : uuid <<FK>>
+  user_id : uuid <<FK>>
+  parent_comment_id : uuid <<FK nullable>>
+  content : text
+  status : varchar
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity "reactions" as reactions {
+  * id : uuid <<PK>>
+  --
+  article_id : uuid <<FK>>
+  user_id : uuid <<FK>>
+  reaction_type : varchar
+  created_at : timestamp
+}
+
+entity "comment_moderation_logs" as comment_moderation_logs {
+  * id : uuid <<PK>>
+  --
+  comment_id : uuid <<FK>>
+  moderator_user_id : uuid <<FK>>
+  previous_status : varchar
+  new_status : varchar
+  reason : text
+  created_at : timestamp
+}
+
+entity "advertisement_placements" as advertisement_placements {
+  * id : uuid <<PK>>
+  --
+  code : varchar <<UNIQUE>>
+  name : varchar
+  description : text
+  allowed_context : varchar
+  is_active : boolean
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity "advertisements" as advertisements {
+  * id : uuid <<PK>>
+  --
+  placement_id : uuid <<FK>>
+  title : varchar
+  image_url : text
+  target_url : text
+  status : varchar
+  starts_at : timestamp
+  ends_at : timestamp
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity "advertisement_category_targets" as advertisement_category_targets {
+  * id : uuid <<PK>>
+  --
+  advertisement_id : uuid <<FK>>
+  category_id : uuid <<FK>>
+}
+
+entity "advertisement_impressions" as advertisement_impressions {
+  * id : uuid <<PK>>
+  --
+  advertisement_id : uuid <<FK>>
+  article_id : uuid <<FK>>
+  user_id : uuid <<FK nullable>>
+  rendered_at : timestamp
+}
+
+entity "user_notification_preferences" as user_notification_preferences {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  category_id : uuid <<FK nullable>>
+  channel : varchar
+  premium_only : boolean
+  enabled : boolean
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity "notification_batches" as notification_batches {
+  * id : uuid <<PK>>
+  --
+  source_event_id : uuid <<FK>>
+  article_id : uuid <<FK>>
+  audience_type : varchar
+  status : varchar
+  total_recipients : int
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity "notifications" as notifications {
+  * id : uuid <<PK>>
+  --
+  batch_id : uuid <<FK>>
+  user_id : uuid <<FK>>
+  channel : varchar
+  title : varchar
+  message : text
+  status : varchar
+  sent_at : timestamp
+  created_at : timestamp
+}
+
+entity "event_outbox" as event_outbox {
+  * id : uuid <<PK>>
+  --
+  event_type : varchar
+  aggregate_type : varchar
+  aggregate_id : uuid
+  payload : jsonb
+  status : varchar
+  correlation_id : uuid
+  causation_id : uuid
+  occurred_at : timestamp
+  published_at : timestamp
+  retry_count : int
+  last_error : text
+}
+
+entity "event_inbox" as event_inbox {
+  * id : uuid <<PK>>
+  --
+  event_id : uuid
+  consumer_name : varchar
+  status : varchar
+  processed_at : timestamp
+  last_error : text
+}
+
+entity "audit_logs" as audit_logs {
+  * id : uuid <<PK>>
+  --
+  actor_user_id : uuid <<FK nullable>>
+  entity_name : varchar
+  entity_id : uuid
+  action : varchar
+  metadata : jsonb
+  created_at : timestamp
+}
+
+users ||--o{ user_roles
+roles ||--o{ user_roles
+users ||--o{ subscriptions
+subscription_plans ||--o{ subscriptions
+subscriptions ||--o{ payment_transactions
+users ||--o{ articles
+categories ||--o{ articles
+articles ||--o{ article_revisions
+users ||--o{ article_revisions
+articles ||--o{ article_tags
+tags ||--o{ article_tags
+users ||--o{ media_assets
+articles ||--o{ article_media
+media_assets ||--o{ article_media
+articles ||--o{ comments
+users ||--o{ comments
+comments ||--o{ comments
+articles ||--o{ reactions
+users ||--o{ reactions
+comments ||--o{ comment_moderation_logs
+users ||--o{ comment_moderation_logs
+advertisement_placements ||--o{ advertisements
+advertisements ||--o{ advertisement_category_targets
+categories ||--o{ advertisement_category_targets
+advertisements ||--o{ advertisement_impressions
+articles ||--o{ advertisement_impressions
+users ||--o{ advertisement_impressions
+users ||--o{ user_notification_preferences
+categories ||--o{ user_notification_preferences
+articles ||--o{ notification_batches
+event_outbox ||--o{ notification_batches
+notification_batches ||--o{ notifications
+users ||--o{ notifications
+users ||--o{ audit_logs
+
+note right of articles
+access_type:
+- public
+- premium
+
+Regla:
+premium = login + suscripción activa + cero publicidad.
+end note
+
+note bottom of event_outbox
+Outbox transaccional para eventos de dominio.
+end note
+
+note bottom of event_inbox
+UNIQUE(event_id, consumer_name)
+para idempotencia.
+end note
+
+note bottom of reactions
+UNIQUE(article_id, user_id)
+para evitar doble reacción.
+end note
+
+note bottom of advertisement_impressions
+Regla obligatoria:
+no crear impresión si article.access_type = premium.
+end note
+
+@enduml

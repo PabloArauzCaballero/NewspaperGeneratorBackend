@@ -1,0 +1,120 @@
+@startuml
+title Diagrama de componentes SOLO BACKEND - Periódico Digital Premium Event-Driven
+
+left to right direction
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam ArrowColor #333333
+
+package "Backend API NestJS" as Backend {
+  [Auth Module] as Auth
+  [Users Module] as Users
+  [Roles & Permissions Module] as Roles
+  [Articles CMS Module] as Articles
+  [Categories Module] as Categories
+  [Tags Module] as Tags
+  [Media Module] as Media
+  [Subscriptions Module] as Subscriptions
+  [Payments Module] as Payments
+  [Comments Module] as Comments
+  [Reactions Module] as Reactions
+  [Ads Module] as Ads
+  [Notifications Module] as Notifications
+  [Events Module\nOutbox/Inbox] as Events
+  [Audit Module] as Audit
+  [Analytics Module] as Analytics
+  [Search Projection Module] as Search
+  [Cache Module] as Cache
+  [Health/Observability Module] as Health
+}
+
+package "Backend Workers" as Workers {
+  [Outbox Dispatcher Worker] as OutboxWorker
+  [Notification Audience Worker] as AudienceWorker
+  [Notification Delivery Worker] as NotificationWorker
+  [Ads Eligibility Worker] as AdsWorker
+  [Search Index Worker] as SearchWorker
+  [Cache Invalidation Worker] as CacheWorker
+  [Analytics Worker] as AnalyticsWorker
+  [Subscription Expiration Worker] as SubscriptionWorker
+}
+
+database "PostgreSQL" as PostgreSQL
+queue "Event Bus / Queue" as EventBus
+collections "Redis\ncache + rate limit" as Redis
+cloud "Object Storage\nS3 compatible" as Storage
+cloud "Payment Provider" as PaymentProvider
+cloud "Notification Providers\nEmail / Push / Web" as NotificationProvider
+cloud "Search Engine\nOpenSearch/Meilisearch optional" as SearchEngine
+cloud "Logs/Metrics/Tracing" as Observability
+
+Auth --> Users
+Auth --> Roles
+Articles --> Categories
+Articles --> Tags
+Articles --> Media
+Articles --> Events
+Articles --> Audit
+Articles --> Cache
+
+Subscriptions --> Payments
+Subscriptions --> Events
+Payments --> PaymentProvider
+Payments --> Events
+
+Comments --> Events
+Comments --> Audit
+Reactions --> Events
+Ads --> Events
+Notifications --> Events
+Analytics --> Events
+
+Media --> Storage
+Cache --> Redis
+Health --> Observability
+
+Backend --> PostgreSQL
+Backend --> Redis
+
+Events --> PostgreSQL : event_outbox / event_inbox
+OutboxWorker --> PostgreSQL : lee event_outbox
+OutboxWorker --> EventBus : publica eventos
+EventBus --> AudienceWorker
+EventBus --> AdsWorker
+EventBus --> SearchWorker
+EventBus --> CacheWorker
+EventBus --> AnalyticsWorker
+EventBus --> NotificationWorker
+EventBus --> SubscriptionWorker
+
+AudienceWorker --> PostgreSQL : resuelve audiencia
+AudienceWorker --> EventBus : NotificationBatchCreated
+NotificationWorker --> PostgreSQL : notificaciones pendientes
+NotificationWorker --> NotificationProvider : enviar
+AdsWorker --> PostgreSQL : validar access_type
+SearchWorker --> SearchEngine : indexar contenido permitido
+CacheWorker --> Redis : invalidar/precalentar cache
+AnalyticsWorker --> PostgreSQL : guardar métricas
+SubscriptionWorker --> PostgreSQL : vencer suscripciones
+SubscriptionWorker --> EventBus : SubscriptionExpired
+
+note right of Articles
+Publicar artículo:
+1. cambia estado a PUBLISHED
+2. inserta ArticlePublished en outbox
+3. no espera workers
+end note
+
+note bottom of AdsWorker
+Si access_type = PREMIUM:
+- no habilita ad slots
+- no registra impresiones
+- emite PremiumAdSlotsDisabled
+end note
+
+note bottom of AudienceWorker
+Public: usuarios registrados activos.
+Premium: solo suscripciones activas.
+end note
+
+@enduml

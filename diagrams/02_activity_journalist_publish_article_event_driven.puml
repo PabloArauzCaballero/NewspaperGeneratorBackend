@@ -1,0 +1,146 @@
+@startuml
+title Actividad event-driven - Publicación de noticia por periodista/editor
+
+skinparam backgroundColor #FFFFFF
+skinparam activity {
+  BackgroundColor #F8F8F8
+  BorderColor #333333
+  FontColor #111111
+}
+skinparam ArrowColor #333333
+skinparam DiamondBackgroundColor #FFFFFF
+skinparam DiamondBorderColor #333333
+
+start
+
+partition "Periodista" {
+  :Abrir CMS editorial;
+  :Iniciar sesión;
+}
+
+partition "Backend Auth" {
+  :Validar credenciales;
+  :Validar rol y permisos;
+  if (¿Permiso válido?) then (Sí)
+  else (No)
+    :Rechazar acceso;
+    stop
+  endif
+}
+
+partition "Periodista" {
+  :Crear o editar noticia;
+  :Completar título, categoría, tags;
+  :Completar cuerpo principal;
+  :Agregar transcripción de audio;
+  :Agregar imágenes y videos;
+  :Definir tipo de acceso: PUBLIC o PREMIUM;
+  :Guardar borrador;
+}
+
+partition "Backend Articles" {
+  :Validar datos obligatorios;
+  :Validar multimedia;
+  :Guardar Article en estado DRAFT;
+  :Crear ArticleRevision;
+  :Insertar ArticleDraftCreated en event_outbox;
+}
+
+partition "Periodista" {
+  :Enviar a revisión editorial;
+}
+
+partition "Backend Articles" {
+  :Cambiar estado a IN_REVIEW;
+  :Insertar ArticleSubmittedForReview en event_outbox;
+}
+
+partition "Editor" {
+  :Revisar contenido;
+  if (¿Solicitar cambios?) then (Sí)
+    :Registrar observaciones;
+    partition "Backend Articles" {
+      :Cambiar estado a CHANGES_REQUESTED;
+      :Insertar ArticleChangesRequested en event_outbox;
+    }
+    stop
+  else (No)
+    :Aprobar publicación;
+  endif
+}
+
+partition "Backend Articles" {
+  :Cambiar estado a APPROVED;
+  :Insertar ArticleApproved en event_outbox;
+  :Publicar noticia;
+  :Cambiar estado a PUBLISHED;
+  :Asignar published_at;
+  :Insertar ArticlePublished en event_outbox dentro de la misma transacción;
+}
+
+partition "Outbox Dispatcher" {
+  :Leer eventos pendientes;
+  :Publicar ArticlePublished al Event Bus;
+  :Marcar outbox como publicado;
+}
+
+partition "Event Bus" {
+  :Distribuir ArticlePublished;
+}
+
+fork
+partition "Feed/Search/Cache Workers" {
+  :Verificar event_inbox;
+  :Actualizar portada, categoría y búsqueda;
+  :Invalidar cache;
+  :Registrar evento procesado;
+}
+fork again
+partition "Ads Worker" {
+  :Verificar event_inbox;
+  if (¿accessType = PUBLIC?) then (Sí)
+    :Emitir PublicAdSlotsEnabled;
+    :Habilitar espacios de publicidad discreta;
+  else (PREMIUM)
+    :Emitir PremiumAdSlotsDisabled;
+    :Bloquear publicidad;
+  endif
+  :Registrar evento procesado;
+}
+fork again
+partition "Notification Audience Worker" {
+  :Verificar event_inbox;
+  if (¿accessType = PUBLIC?) then (Pública)
+    :Resolver audiencia de usuarios registrados activos;
+    :Incluir normales y premium;
+  else (Premium)
+    :Resolver audiencia solo de suscriptores activos;
+  endif
+  :Crear NotificationBatch;
+  :Insertar NotificationBatchCreated en outbox;
+}
+fork again
+partition "Analytics Worker" {
+  :Verificar event_inbox;
+  :Registrar publicación para métricas editoriales;
+}
+end fork
+
+partition "Notification Worker" {
+  :Consumir NotificationBatchCreated;
+  :Enviar notificaciones push/email/web;
+  :Registrar NotificationSent o NotificationFailed;
+}
+
+partition "Portal público" {
+  if (¿Noticia pública?) then (Sí)
+    :Disponible para visitantes, registrados y premium;
+    :Renderizar publicidad discreta;
+  else (Premium)
+    :Disponible solo para premium activos;
+    :Renderizar sin publicidad;
+  endif
+}
+
+stop
+@enduml

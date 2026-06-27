@@ -1,0 +1,335 @@
+@startuml
+title Diagrama de clases event-driven - Periódico digital premium
+
+left to right direction
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+package "Usuarios y acceso" {
+  class User {
+    +id: UUID
+    +fullName: string
+    +email: string
+    +passwordHash: string
+    +status: string
+    +createdAt: datetime
+    +updatedAt: datetime
+  }
+
+  class Role {
+    +id: UUID
+    +name: string
+    +description: string
+  }
+
+  class UserRole {
+    +id: UUID
+    +userId: UUID
+    +roleId: UUID
+    +createdAt: datetime
+  }
+
+  class UserNotificationPreference {
+    +id: UUID
+    +userId: UUID
+    +channel: string
+    +categoryId: UUID
+    +premiumOnly: boolean
+    +enabled: boolean
+  }
+}
+
+package "Suscripciones" {
+  class SubscriptionPlan {
+    +id: UUID
+    +name: string
+    +description: string
+    +price: decimal
+    +currency: string
+    +durationDays: int
+    +isActive: boolean
+  }
+
+  class Subscription {
+    +id: UUID
+    +userId: UUID
+    +planId: UUID
+    +status: string
+    +startsAt: datetime
+    +endsAt: datetime
+    +cancelledAt: datetime
+    +isActive(now): boolean
+  }
+
+  class PaymentTransaction {
+    +id: UUID
+    +subscriptionId: UUID
+    +provider: string
+    +externalReference: string
+    +amount: decimal
+    +currency: string
+    +status: string
+    +paidAt: datetime
+  }
+}
+
+package "Contenido editorial" {
+  class Article {
+    +id: UUID
+    +authorId: UUID
+    +categoryId: UUID
+    +title: string
+    +slug: string
+    +summary: string
+    +body: text
+    +audioTranscript: text
+    +articleType: string
+    +accessType: string
+    +status: string
+    +commentsEnabled: boolean
+    +reactionsEnabled: boolean
+    +publishedAt: datetime
+    +createdAt: datetime
+    +updatedAt: datetime
+    +canShowAds(): boolean
+    +requiresPremium(): boolean
+  }
+
+  class ArticleRevision {
+    +id: UUID
+    +articleId: UUID
+    +editedByUserId: UUID
+    +titleSnapshot: string
+    +bodySnapshot: text
+    +changeReason: string
+    +createdAt: datetime
+  }
+
+  class Category {
+    +id: UUID
+    +name: string
+    +slug: string
+    +isActive: boolean
+  }
+
+  class Tag {
+    +id: UUID
+    +name: string
+    +slug: string
+  }
+
+  class ArticleTag {
+    +id: UUID
+    +articleId: UUID
+    +tagId: UUID
+  }
+
+  class MediaAsset {
+    +id: UUID
+    +uploadedByUserId: UUID
+    +mediaType: string
+    +url: string
+    +caption: string
+    +altText: string
+    +mimeType: string
+    +sizeBytes: long
+  }
+
+  class ArticleMedia {
+    +id: UUID
+    +articleId: UUID
+    +mediaAssetId: UUID
+    +displayOrder: int
+    +isCover: boolean
+  }
+}
+
+package "Interacciones" {
+  class Comment {
+    +id: UUID
+    +articleId: UUID
+    +userId: UUID
+    +parentCommentId: UUID
+    +content: text
+    +status: string
+    +createdAt: datetime
+  }
+
+  class Reaction {
+    +id: UUID
+    +articleId: UUID
+    +userId: UUID
+    +reactionType: string
+    +createdAt: datetime
+  }
+
+  class CommentModerationLog {
+    +id: UUID
+    +commentId: UUID
+    +moderatorUserId: UUID
+    +previousStatus: string
+    +newStatus: string
+    +reason: text
+    +createdAt: datetime
+  }
+}
+
+package "Publicidad" {
+  class AdvertisementPlacement {
+    +id: UUID
+    +code: string
+    +name: string
+    +allowedContext: string
+    +isActive: boolean
+  }
+
+  class Advertisement {
+    +id: UUID
+    +placementId: UUID
+    +title: string
+    +imageUrl: string
+    +targetUrl: string
+    +status: string
+    +startsAt: datetime
+    +endsAt: datetime
+  }
+
+  class AdvertisementCategoryTarget {
+    +id: UUID
+    +advertisementId: UUID
+    +categoryId: UUID
+  }
+
+  class AdvertisementImpression {
+    +id: UUID
+    +advertisementId: UUID
+    +articleId: UUID
+    +userId: UUID
+    +renderedAt: datetime
+  }
+}
+
+package "Notificaciones" {
+  class NotificationBatch {
+    +id: UUID
+    +sourceEventId: UUID
+    +articleId: UUID
+    +audienceType: string
+    +status: string
+    +totalRecipients: int
+    +createdAt: datetime
+  }
+
+  class Notification {
+    +id: UUID
+    +batchId: UUID
+    +userId: UUID
+    +channel: string
+    +title: string
+    +message: string
+    +status: string
+    +sentAt: datetime
+  }
+}
+
+package "Eventos" {
+  class EventOutbox {
+    +id: UUID
+    +eventType: string
+    +aggregateType: string
+    +aggregateId: UUID
+    +payload: json
+    +status: string
+    +correlationId: UUID
+    +causationId: UUID
+    +occurredAt: datetime
+    +publishedAt: datetime
+    +retryCount: int
+  }
+
+  class EventInbox {
+    +id: UUID
+    +eventId: UUID
+    +consumerName: string
+    +processedAt: datetime
+    +status: string
+  }
+
+  class AuditLog {
+    +id: UUID
+    +actorUserId: UUID
+    +entityName: string
+    +entityId: UUID
+    +action: string
+    +metadata: json
+    +createdAt: datetime
+  }
+}
+
+User "1" -- "0..*" UserRole
+Role "1" -- "0..*" UserRole
+User "1" -- "0..*" UserNotificationPreference
+Category "0..1" -- "0..*" UserNotificationPreference
+
+User "1" -- "0..*" Subscription
+SubscriptionPlan "1" -- "0..*" Subscription
+Subscription "1" -- "0..*" PaymentTransaction
+
+User "1" -- "0..*" Article : autor >
+Category "1" -- "0..*" Article
+Article "1" -- "0..*" ArticleRevision
+User "1" -- "0..*" ArticleRevision : editor >
+Article "1" -- "0..*" ArticleTag
+Tag "1" -- "0..*" ArticleTag
+Article "1" -- "0..*" ArticleMedia
+MediaAsset "1" -- "0..*" ArticleMedia
+User "1" -- "0..*" MediaAsset
+
+Article "1" -- "0..*" Comment
+User "1" -- "0..*" Comment
+Comment "1" -- "0..*" Comment : respuestas >
+Article "1" -- "0..*" Reaction
+User "1" -- "0..*" Reaction
+Comment "1" -- "0..*" CommentModerationLog
+User "1" -- "0..*" CommentModerationLog : modera >
+
+AdvertisementPlacement "1" -- "0..*" Advertisement
+Advertisement "1" -- "0..*" AdvertisementCategoryTarget
+Category "1" -- "0..*" AdvertisementCategoryTarget
+Advertisement "1" -- "0..*" AdvertisementImpression
+Article "1" -- "0..*" AdvertisementImpression
+User "0..1" -- "0..*" AdvertisementImpression
+
+Article "1" -- "0..*" NotificationBatch
+NotificationBatch "1" -- "0..*" Notification
+User "1" -- "0..*" Notification
+EventOutbox "0..1" -- "0..*" NotificationBatch : sourceEvent >
+
+User "0..1" -- "0..*" AuditLog
+
+note right of Article
+accessType PUBLIC:
+- visible sin login
+- puede mostrar publicidad discreta
+
+accessType PREMIUM:
+- requiere login + suscripción activa
+- cero publicidad
+end note
+
+note bottom of EventOutbox
+Outbox transaccional:
+se escribe junto con el cambio de negocio.
+end note
+
+note bottom of EventInbox
+Inbox idempotente:
+evita reprocesar eventos duplicados por worker.
+end note
+
+note bottom of AdvertisementImpression
+Constraint de negocio:
+no debe existir impresión si Article.accessType = PREMIUM.
+end note
+
+@enduml

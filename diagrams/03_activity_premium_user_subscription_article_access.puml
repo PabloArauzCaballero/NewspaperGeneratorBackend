@@ -1,0 +1,167 @@
+@startuml
+title Actividad event-driven - Usuario se suscribe y accede a noticias pública y premium
+
+skinparam backgroundColor #FFFFFF
+skinparam activity {
+  BackgroundColor #F8F8F8
+  BorderColor #333333
+  FontColor #111111
+}
+skinparam ArrowColor #333333
+skinparam DiamondBackgroundColor #FFFFFF
+skinparam DiamondBorderColor #333333
+
+start
+
+partition "Visitante" {
+  :Entrar al sitio del periódico;
+  :Crear cuenta;
+  :Completar datos de registro;
+}
+
+partition "Backend Users/Auth" {
+  :Validar datos;
+  if (¿Datos válidos?) then (Sí)
+    :Crear usuario ACTIVE;
+    :Insertar UserRegistered en event_outbox;
+  else (No)
+    :Mostrar error;
+    stop
+  endif
+}
+
+partition "Outbox Dispatcher" {
+  :Publicar UserRegistered;
+}
+
+partition "Usuario registrado" {
+  :Iniciar sesión;
+  :Abrir planes premium;
+  :Elegir plan;
+}
+
+partition "Backend Subscriptions" {
+  :Validar plan activo;
+  :Crear Subscription PENDING;
+  :Crear PaymentTransaction PENDING;
+  :Insertar SubscriptionPaymentStarted en event_outbox;
+}
+
+partition "Proveedor de pagos" {
+  :Procesar pago;
+  if (¿Pago aprobado?) then (Sí)
+    :Enviar webhook exitoso;
+  else (No)
+    :Enviar webhook fallido;
+  endif
+}
+
+partition "Backend Payments" {
+  :Validar firma e idempotencia de webhook;
+  if (¿Pago exitoso?) then (Sí)
+    :Actualizar PaymentTransaction PAID;
+    :Activar Subscription ACTIVE;
+    :Definir starts_at y ends_at;
+    :Insertar SubscriptionActivated en event_outbox;
+  else (No)
+    :Marcar PaymentTransaction FAILED;
+    :Marcar Subscription PAYMENT_FAILED;
+    :Insertar SubscriptionPaymentFailed en event_outbox;
+    stop
+  endif
+}
+
+partition "Outbox Dispatcher" {
+  :Publicar SubscriptionActivated;
+}
+
+fork
+partition "Notification Worker" {
+  :Enviar confirmación de suscripción activa;
+}
+fork again
+partition "User Projection Worker" {
+  :Actualizar proyección de premium activo;
+}
+fork again
+partition "Audit Worker" {
+  :Registrar auditoría de suscripción;
+}
+end fork
+
+partition "Usuario premium" {
+  :Abrir noticia pública;
+}
+
+partition "Backend Content" {
+  :Validar artículo publicado;
+  if (¿accessType = PUBLIC?) then (Sí)
+    :Retornar contenido completo público;
+    :Insertar ArticleViewed en event_outbox;
+  else (No)
+    :Aplicar flujo premium;
+  endif
+}
+
+partition "Frontend Web" {
+  :Renderizar noticia pública;
+  :Solicitar anuncios discretos;
+}
+
+partition "Backend Ads" {
+  :Validar que artículo sea PUBLIC;
+  :Retornar ad slots discretos activos;
+}
+
+partition "Usuario premium" {
+  :Leer noticia pública con publicidad discreta;
+  :Abrir nota premium;
+}
+
+partition "Backend Content" {
+  :Validar artículo publicado;
+  :Detectar accessType = PREMIUM;
+  :Validar sesión;
+}
+
+partition "Backend Subscriptions" {
+  :Validar suscripción ACTIVE y ends_at > now;
+  if (¿Suscripción activa?) then (Sí)
+    :Autorizar acceso;
+  else (No)
+    :Denegar acceso;
+    :Retornar preview y CTA de suscripción;
+    :Insertar PremiumArticleAccessDenied en event_outbox;
+    stop
+  endif
+}
+
+partition "Backend Content" {
+  :Retornar contenido premium completo;
+  :Insertar PremiumArticleViewed en event_outbox;
+}
+
+partition "Frontend Web" {
+  :Renderizar nota premium completa;
+  :No solicitar anuncios;
+  :No renderizar publicidad;
+}
+
+partition "Usuario premium" {
+  :Leer nota premium sin publicidad;
+  :Comentar o reaccionar si desea;
+}
+
+partition "Backend Interactions" {
+  if (¿Comenta o reacciona?) then (Sí)
+    :Validar login;
+    :Validar acceso al artículo;
+    :Guardar comentario/reacción;
+    :Insertar CommentCreated o ReactionCreated en outbox;
+  else (No)
+    :Finalizar lectura;
+  endif
+}
+
+stop
+@enduml

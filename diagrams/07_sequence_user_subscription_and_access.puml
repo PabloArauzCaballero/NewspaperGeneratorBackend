@@ -1,0 +1,92 @@
+@startuml
+title Secuencia backend - Registro, suscripción y acceso a noticia pública/premium
+
+autonumber
+
+actor "Visitante / Usuario" as User
+participant "AuthController" as AuthController
+participant "UsersService" as UsersService
+participant "SubscriptionsController" as SubController
+participant "SubscriptionsService" as SubService
+participant "PaymentsService" as PaymentsService
+participant "ContentController" as ContentController
+participant "ArticlesService" as ArticlesService
+participant "AccessPolicyService" as AccessPolicy
+participant "AdsController" as AdsController
+participant "AdsService" as AdsService
+participant "EventOutboxService" as Outbox
+database "PostgreSQL" as DB
+participant "Payment Provider" as Provider
+
+User -> AuthController : POST /auth/register
+AuthController -> UsersService : register(data)
+UsersService -> DB : INSERT users status=ACTIVE
+UsersService -> Outbox : append(UserRegistered)
+UsersService --> AuthController : user created
+AuthController --> User : 201 Created
+
+User -> AuthController : POST /auth/login
+AuthController -> UsersService : validate credentials
+UsersService -> DB : SELECT user
+DB --> UsersService : valid user
+AuthController --> User : JWT/session
+
+User -> SubController : GET /subscription-plans
+SubController -> SubService : listActivePlans()
+SubService -> DB : SELECT active plans
+DB --> SubService : plans
+SubController --> User : planes disponibles
+
+User -> SubController : POST /subscriptions/checkout(planId)
+SubController -> SubService : createPendingSubscription(userId, planId)
+SubService -> DB : INSERT subscription PENDING
+SubService -> PaymentsService : createPaymentIntent(subscription)
+PaymentsService -> Provider : create checkout/payment intent
+Provider --> PaymentsService : payment url/reference
+PaymentsService -> DB : INSERT payment_transaction PENDING
+SubService -> Outbox : append(SubscriptionPaymentStarted)
+SubController --> User : payment url/reference
+
+Provider -> PaymentsService : webhook payment succeeded
+PaymentsService -> PaymentsService : validar firma + idempotencia
+PaymentsService -> DB : UPDATE payment_transaction PAID
+PaymentsService -> DB : UPDATE subscription ACTIVE, starts_at, ends_at
+PaymentsService -> Outbox : append(SubscriptionActivated)
+PaymentsService --> Provider : 200 OK
+
+User -> ContentController : GET /articles/{slug} noticia pública
+ContentController -> ArticlesService : getArticle(slug)
+ArticlesService -> DB : SELECT article
+DB --> ArticlesService : article access_type=PUBLIC
+ArticlesService -> AccessPolicy : canRead(user?, article)
+AccessPolicy --> ArticlesService : allowed
+ArticlesService --> ContentController : full public article
+ContentController --> User : noticia completa
+
+User -> AdsController : GET /ads/slots?articleId=...
+AdsController -> AdsService : getSlots(articleId)
+AdsService -> DB : SELECT article access_type
+DB --> AdsService : PUBLIC
+AdsService -> DB : SELECT active ads
+DB --> AdsService : ads discretos
+AdsController --> User : ad slots
+
+User -> ContentController : GET /premium/articles/{slug}
+ContentController -> ArticlesService : getArticle(slug)
+ArticlesService -> DB : SELECT article
+DB --> ArticlesService : article access_type=PREMIUM
+ArticlesService -> AccessPolicy : canRead(userId, premium article)
+AccessPolicy -> DB : SELECT active subscription ends_at > now
+DB --> AccessPolicy : active subscription
+AccessPolicy --> ArticlesService : allowed
+ArticlesService --> ContentController : full premium article
+ContentController --> User : nota premium completa sin publicidad
+
+User -> AdsController : GET /ads/slots?premiumArticleId=...
+AdsController -> AdsService : getSlots(articleId)
+AdsService -> DB : SELECT article access_type
+DB --> AdsService : PREMIUM
+AdsService --> AdsController : empty list
+AdsController --> User : []
+
+@enduml

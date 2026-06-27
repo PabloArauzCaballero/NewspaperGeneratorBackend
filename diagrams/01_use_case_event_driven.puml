@@ -1,0 +1,158 @@
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam usecase {
+  BackgroundColor #F8F8F8
+  BorderColor #333333
+}
+skinparam ArrowColor #333333
+
+title Casos de uso event-driven - Periódico Digital Premium
+
+actor "Lector" as Lector
+actor "Visitante\nno logueado" as Visitante
+actor "Usuario registrado\nlogueado" as Registrado
+actor "Usuario premium\nsuscripción activa" as Premium
+actor "Usuario interno" as Interno
+actor "Periodista" as Periodista
+actor "Editor" as Editor
+actor "Administrador" as Admin
+actor "Editor comercial" as Comercial
+actor "Proveedor de pagos" as Pagos
+
+Visitante --|> Lector
+Registrado --|> Lector
+Premium --|> Registrado
+Periodista --|> Interno
+Editor --|> Interno
+Admin --|> Interno
+Comercial --|> Interno
+
+rectangle "Backend Periódico Digital" {
+  package "Auth y usuarios" {
+    usecase "Registrarse" as UC_Register
+    usecase "Iniciar sesión" as UC_Login
+    usecase "Gestionar perfil" as UC_Profile
+    usecase "Validar permisos" as UC_Permissions
+  }
+
+  package "CMS editorial" {
+    usecase "Crear artículo" as UC_CreateArticle
+    usecase "Editar artículo" as UC_EditArticle
+    usecase "Enviar a revisión" as UC_SubmitReview
+    usecase "Aprobar artículo" as UC_Approve
+    usecase "Publicar artículo" as UC_Publish
+    usecase "Despublicar artículo" as UC_Unpublish
+    usecase "Gestionar multimedia" as UC_Media
+    usecase "Clasificar con categoría y tags" as UC_Classify
+  }
+
+  package "Lectura y paywall" {
+    usecase "Leer noticia pública" as UC_ReadPublic
+    usecase "Ver vista previa premium" as UC_PremiumPreview
+    usecase "Leer nota premium" as UC_ReadPremium
+    usecase "Validar suscripción activa" as UC_CheckSubscription
+    usecase "Bloquear acceso premium" as UC_BlockPremium
+  }
+
+  package "Suscripciones" {
+    usecase "Elegir plan" as UC_SelectPlan
+    usecase "Pagar suscripción" as UC_PaySubscription
+    usecase "Activar suscripción" as UC_ActivateSubscription
+    usecase "Cancelar/Renovar suscripción" as UC_ManageSubscription
+  }
+
+  package "Interacción" {
+    usecase "Comentar noticia" as UC_Comment
+    usecase "Reaccionar a noticia" as UC_React
+    usecase "Moderar comentarios" as UC_Moderate
+    usecase "Validar usuario logueado" as UC_CheckLogin
+  }
+
+  package "Publicidad discreta" {
+    usecase "Gestionar anuncios" as UC_ManageAds
+    usecase "Mostrar publicidad en noticia pública" as UC_ShowAds
+    usecase "Bloquear publicidad en premium" as UC_BlockAdsPremium
+  }
+
+  package "Event-driven" {
+    usecase "Registrar evento en outbox" as UC_Outbox
+    usecase "Despachar evento" as UC_Dispatch
+    usecase "Procesar evento idempotente" as UC_Inbox
+    usecase "Notificar usuarios" as UC_Notify
+    usecase "Actualizar cache/feed/búsqueda" as UC_Project
+  }
+}
+
+Visitante --> UC_Register
+Visitante --> UC_ReadPublic
+Visitante --> UC_PremiumPreview
+
+Registrado --> UC_Login
+Registrado --> UC_Profile
+Registrado --> UC_ReadPublic
+Registrado --> UC_Comment
+Registrado --> UC_React
+Registrado --> UC_SelectPlan
+Registrado --> UC_PaySubscription
+Registrado --> UC_ManageSubscription
+
+Premium --> UC_ReadPremium
+Premium --> UC_Comment
+Premium --> UC_React
+Premium --> UC_ManageSubscription
+
+Periodista --> UC_Login
+Periodista --> UC_CreateArticle
+Periodista --> UC_EditArticle
+Periodista --> UC_SubmitReview
+Periodista --> UC_Media
+Periodista --> UC_Classify
+
+Editor --> UC_Login
+Editor --> UC_Approve
+Editor --> UC_Publish
+Editor --> UC_Unpublish
+Editor --> UC_Moderate
+Editor --> UC_EditArticle
+
+Admin --> UC_Login
+Admin --> UC_Permissions
+Admin --> UC_ManageSubscription
+Admin --> UC_ManageAds
+Admin --> UC_Moderate
+
+Comercial --> UC_Login
+Comercial --> UC_ManageAds
+
+Pagos --> UC_PaySubscription
+
+UC_CreateArticle ..> UC_Media : <<include>>
+UC_CreateArticle ..> UC_Classify : <<include>>
+UC_EditArticle ..> UC_Media : <<include>>
+UC_EditArticle ..> UC_Classify : <<include>>
+UC_Publish ..> UC_Outbox : <<include>>
+UC_Publish ..> UC_Dispatch : <<include>>
+UC_Dispatch ..> UC_Inbox : <<include>>
+UC_Dispatch ..> UC_Notify : <<include>>
+UC_Dispatch ..> UC_Project : <<include>>
+UC_ReadPublic ..> UC_ShowAds : <<include>>
+UC_ReadPremium ..> UC_CheckSubscription : <<include>>
+UC_ReadPremium ..> UC_BlockAdsPremium : <<include>>
+UC_BlockPremium ..> UC_PremiumPreview : <<include>>
+UC_Comment ..> UC_CheckLogin : <<include>>
+UC_React ..> UC_CheckLogin : <<include>>
+UC_PaySubscription ..> UC_ActivateSubscription : <<include>>
+
+note right of UC_ShowAds
+Solo para noticias públicas.
+Nunca en premium.
+end note
+
+note bottom of UC_Notify
+Public: registrados activos y premium.
+Premium: solo suscripción activa.
+end note
+
+@enduml

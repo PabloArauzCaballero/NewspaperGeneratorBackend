@@ -1,0 +1,63 @@
+@startuml
+title Diagrama de estados - Noticia / Artículo
+
+skinparam state {
+  BackgroundColor #F8F8F8
+  BorderColor #333333
+}
+skinparam ArrowColor #333333
+
+[*] --> Draft : ArticleDraftCreated
+
+Draft --> InReview : submitForReview / ArticleSubmittedForReview
+Draft --> Archived : archive
+
+InReview --> ChangesRequested : requestChanges / ArticleChangesRequested
+InReview --> Approved : approve / ArticleApproved
+InReview --> Archived : archive
+
+ChangesRequested --> Draft : editAgain
+ChangesRequested --> InReview : resubmit
+ChangesRequested --> Archived : archive
+
+Approved --> Scheduled : schedulePublication / ArticleScheduled
+Approved --> Published : publishNow / ArticlePublished
+Approved --> Draft : reopenDraft
+
+Scheduled --> Published : publicationTimeReached / ArticlePublished
+Scheduled --> Approved : cancelSchedule
+Scheduled --> Unpublished : cancelPublication
+
+Published --> Published : updateAfterPublication / ArticleUpdatedAfterPublication
+Published --> Unpublished : unpublish / ArticleUnpublished
+Published --> Archived : archivePublished
+
+Unpublished --> Draft : editAsDraft
+Unpublished --> Published : republish / ArticlePublished
+Unpublished --> Archived : archive
+
+Archived --> [*]
+
+state Published {
+  [*] --> AccessDecision
+  AccessDecision --> PublicPublished : access_type = public
+  AccessDecision --> PremiumPublished : access_type = premium
+
+  PublicPublished : visible para visitantes, registrados y premium
+  PublicPublished : publicidad discreta permitida
+  PublicPublished : notificar registrados activos
+
+  PremiumPublished : visible solo para premium activos
+  PremiumPublished : cero publicidad
+  PremiumPublished : notificar solo suscriptores activos
+}
+
+note right of Published
+Al entrar en Published:
+- insertar ArticlePublished en event_outbox
+- workers actualizan feed, cache, búsqueda
+- workers resuelven audiencia
+- ads worker decide publicidad según access_type
+end note
+
+@enduml

@@ -1,0 +1,109 @@
+@startuml
+title Secuencia backend - Publicar noticia y notificar usuarios event-driven
+
+autonumber
+skinparam participantPadding 20
+skinparam BoxPadding 10
+
+actor "Editor/Periodista autorizado" as Editor
+participant "ArticlesController" as ArticlesController
+participant "AuthGuard/RBAC" as Guard
+participant "ArticlesService" as ArticlesService
+participant "ArticlesRepository" as ArticlesRepo
+database "PostgreSQL" as DB
+participant "EventOutboxService" as Outbox
+queue "Event Bus / Queue" as Bus
+participant "OutboxDispatcher" as Dispatcher
+participant "NotificationAudienceWorker" as AudienceWorker
+participant "AdsWorker" as AdsWorker
+participant "CacheSearchWorker" as CacheWorker
+participant "NotificationWorker" as NotificationWorker
+participant "EventInbox" as Inbox
+participant "NotificationService" as Notify
+
+Editor -> ArticlesController : POST /admin/articles/{id}/publish
+ArticlesController -> Guard : validar JWT + permisos publish_article
+Guard --> ArticlesController : autorizado
+ArticlesController -> ArticlesService : publishArticle(articleId, actorId)
+
+activate ArticlesService
+ArticlesService -> ArticlesRepo : findById(articleId)
+ArticlesRepo -> DB : SELECT article
+DB --> ArticlesRepo : article
+ArticlesRepo --> ArticlesService : article
+
+ArticlesService -> ArticlesService : validar estado APPROVED/SCHEDULED
+ArticlesService -> DB : BEGIN TRANSACTION
+ArticlesService -> ArticlesRepo : update status=PUBLISHED, published_at=now
+ArticlesRepo -> DB : UPDATE articles
+ArticlesService -> Outbox : append(ArticlePublished)
+Outbox -> DB : INSERT event_outbox
+ArticlesService -> DB : COMMIT
+ArticlesService --> ArticlesController : article published
+ArticlesController --> Editor : 200 OK
+
+deactivate ArticlesService
+
+Dispatcher -> DB : SELECT event_outbox WHERE status=PENDING
+DB --> Dispatcher : ArticlePublished
+Dispatcher -> Bus : publish(ArticlePublished)
+Dispatcher -> DB : UPDATE event_outbox status=PUBLISHED
+
+Bus -> AudienceWorker : ArticlePublished
+AudienceWorker -> Inbox : check(eventId, NotificationAudienceWorker)
+Inbox --> AudienceWorker : not processed
+AudienceWorker -> DB : SELECT article access_type
+DB --> AudienceWorker : PUBLIC or PREMIUM
+
+alt access_type = PUBLIC
+  AudienceWorker -> DB : SELECT active registered users
+  DB --> AudienceWorker : usuarios registrados + premium
+else access_type = PREMIUM
+  AudienceWorker -> DB : SELECT users with active subscriptions
+  DB --> AudienceWorker : solo premium activos
+end
+
+AudienceWorker -> DB : INSERT notification_batches + notifications PENDING
+AudienceWorker -> Outbox : append(NotificationBatchCreated)
+AudienceWorker -> Inbox : mark processed
+
+Bus -> AdsWorker : ArticlePublished
+AdsWorker -> Inbox : check(eventId, AdsWorker)
+Inbox --> AdsWorker : not processed
+AdsWorker -> DB : SELECT article access_type
+DB --> AdsWorker : PUBLIC or PREMIUM
+
+alt access_type = PUBLIC
+  AdsWorker -> DB : habilitar ad slots discretos
+  AdsWorker -> Outbox : append(PublicAdSlotsEnabled)
+else access_type = PREMIUM
+  AdsWorker -> Outbox : append(PremiumAdSlotsDisabled)
+  note right of AdsWorker
+    No crear ad slots.
+    No crear impresiones.
+    No renderizar anuncios.
+  end note
+end
+AdsWorker -> Inbox : mark processed
+
+Bus -> CacheWorker : ArticlePublished
+CacheWorker -> Inbox : check(eventId, CacheSearchWorker)
+Inbox --> CacheWorker : not processed
+CacheWorker -> DB : actualizar feed/proyección/búsqueda
+CacheWorker -> CacheWorker : invalidar cache portada/categoría
+CacheWorker -> Inbox : mark processed
+
+Dispatcher -> Bus : publish(NotificationBatchCreated)
+Bus -> NotificationWorker : NotificationBatchCreated
+NotificationWorker -> Inbox : check(eventId, NotificationWorker)
+Inbox --> NotificationWorker : not processed
+NotificationWorker -> DB : SELECT pending notifications
+DB --> NotificationWorker : recipients
+loop por cada notificación
+  NotificationWorker -> Notify : send(channel, user, message)
+  Notify --> NotificationWorker : sent / failed
+  NotificationWorker -> DB : UPDATE notifications status
+end
+NotificationWorker -> Inbox : mark processed
+
+@enduml

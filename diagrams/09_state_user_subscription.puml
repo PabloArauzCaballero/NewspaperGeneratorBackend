@@ -1,0 +1,68 @@
+@startuml
+title Diagrama de estados - Usuario lector y suscripción premium
+
+skinparam state {
+  BackgroundColor #F8F8F8
+  BorderColor #333333
+}
+skinparam ArrowColor #333333
+
+[*] --> Visitor
+
+Visitor : No tiene cuenta activa
+Visitor : Puede leer noticias públicas
+Visitor : No puede comentar ni reaccionar
+Visitor : No puede leer premium completo
+
+Visitor --> RegisteredPendingVerification : register / UserRegistered
+RegisteredPendingVerification --> RegisteredActive : verifyEmail
+RegisteredPendingVerification --> Blocked : fraudOrAbuse
+
+RegisteredActive : Usuario logueable
+RegisteredActive : Lee noticias públicas
+RegisteredActive : Puede comentar/reaccionar en contenido público
+RegisteredActive : Puede elegir plan premium
+
+RegisteredActive --> SubscriptionPending : selectPlan / SubscriptionPaymentStarted
+SubscriptionPending --> PremiumActive : paymentSucceeded / SubscriptionActivated
+SubscriptionPending --> SubscriptionPaymentFailed : paymentFailed
+SubscriptionPaymentFailed --> SubscriptionPending : retryPayment
+SubscriptionPaymentFailed --> RegisteredActive : cancelCheckout
+
+PremiumActive : Suscripción ACTIVE
+PremiumActive : Puede leer notas premium completas
+PremiumActive : Cero publicidad en premium
+PremiumActive : Puede comentar/reaccionar en premium si está habilitado
+
+PremiumActive --> PastDue : renewalPaymentFailed
+PastDue --> PremiumActive : paymentRecovered
+PastDue --> Expired : gracePeriodEnded
+PremiumActive --> Cancelled : cancelSubscription
+PremiumActive --> Expired : ends_at <= now
+
+Cancelled : Puede conservar acceso hasta ends_at si negocio lo define
+Cancelled --> RegisteredActive : ends_at <= now
+Cancelled --> PremiumActive : reactivate
+
+Expired : Sin acceso premium
+Expired --> RegisteredActive : downgrade
+Expired --> SubscriptionPending : renew
+
+RegisteredActive --> Suspended : policyViolation
+PremiumActive --> Suspended : policyViolation
+Suspended : No puede comentar/reaccionar
+Suspended : Acceso limitado según política
+Suspended --> RegisteredActive : reactivate
+Suspended --> Blocked : severeViolation
+
+RegisteredActive --> Blocked : abuse/security
+PremiumActive --> Blocked : abuse/security
+Blocked --> [*]
+
+note right of PremiumActive
+Premium no es un rol fijo.
+Se calcula por suscripción:
+status = ACTIVE y ends_at > now.
+end note
+
+@enduml
