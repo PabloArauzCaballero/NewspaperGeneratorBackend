@@ -48,7 +48,7 @@ Esto evita arrastrar ownership del ambiente origen hacia Neon backup.
 Requiere tener `pg_dump`, `pg_restore` y `psql` instalados.
 
 ```bash
-npm run backup:neon
+yarn backup:neon
 ```
 
 ## Ejecución desde GitHub Actions

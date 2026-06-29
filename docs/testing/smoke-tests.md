@@ -7,13 +7,13 @@ Este backend incluye dos niveles de smoke tests. La intención no es reemplazar 
 Comando:
 
 ```bash
-npm run test:smoke:db
+yarn test:smoke:db
 ```
 
 Alias:
 
 ```bash
-npm run test:smoke
+yarn test:smoke
 ```
 
 Valida:
@@ -38,19 +38,19 @@ Valida:
 Primero debe estar corriendo el servidor:
 
 ```bash
-npm run start:dev
+yarn start:dev
 ```
 
 En otra terminal:
 
 ```bash
-npm run test:smoke:http
+yarn test:smoke:http
 ```
 
 También puedes cambiar el endpoint base:
 
 ```bash
-API_BASE_URL=http://localhost:3000/api/v1 npm run test:smoke:http
+API_BASE_URL=http://localhost:3000/api/v1 yarn test:smoke:http
 ```
 
 Valida:
@@ -78,7 +78,7 @@ Valida:
 Requiere servidor levantado:
 
 ```bash
-npm run test:smoke:all
+yarn test:smoke:all
 ```
 
 Ejecuta DB smoke y HTTP smoke.
@@ -89,14 +89,14 @@ Ejecuta DB smoke y HTTP smoke.
 cp .env.example .env
 docker compose up -d postgres redis
 npm install
-npm run db:migrate
-npm run db:seed
-npm run typecheck
-npm run build
-npm run test:smoke:db
-npm run start:dev
+yarn db:migrate
+yarn db:seed
+yarn typecheck
+yarn build
+yarn test:smoke:db
+yarn start:dev
 # en otra terminal
-npm run test:smoke:http
+yarn test:smoke:http
 ```
 
 ## Qué hacer si falla
@@ -104,7 +104,7 @@ npm run test:smoke:http
 | Falla | Causa probable | Acción |
 |---|---|---|
 | `DATABASE_URL is required` | `.env` no cargado | Crear `.env` desde `.env.example`. |
-| `Expected at least 6 users` | Seeds no ejecutados | Ejecutar `npm run db:seed`. |
+| `Expected at least 6 users` | Seeds no ejecutados | Ejecutar `yarn db:seed`. |
 | `Premium article has advertisement impressions` | Regla premium rota | Revisar trigger SQL y `AdsService`. |
 | `status 401` en login válido | Password o seed cambiado | Revisar seeder y `BCRYPT_ROUNDS`. |
 | Health `redis.error` | Redis apagado | `docker compose up -d redis`. |
@@ -115,18 +115,18 @@ npm run test:smoke:http
 Además de los smokes DB/HTTP, esta entrega añade:
 
 ```bash
-npm run test:unit
-npm run test:contracts
-npm run test:security
-npm run db:validate
-npm run postman:validate
-npm run start:worker:events:once
+yarn test:unit
+yarn test:contracts
+yarn test:security
+yarn db:validate
+yarn postman:validate
+yarn start:worker:events:once
 ```
 
 El comando recomendado para certificar la entrega completa es:
 
 ```bash
-npm run test:all
+yarn test:all
 ```
 
 El smoke HTTP ahora valida también:

@@ -48,24 +48,42 @@ jobs:
       SECURITY_SMOKE_RATE_LIMIT_ATTEMPTS: 12
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+
+      - name: Use Node.js 22 LTS
+        uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run db:validate
-      - run: npm run postman:validate
-      - run: npm audit --audit-level=moderate
-      - run: npm run typecheck
-      - run: npm run build
-      - run: npm run test:unit
-      - run: npm run test:contracts
-      - run: npm run db:migrate
-      - run: npm run db:seed
-      - run: npm run test:smoke:db
+
+      - name: Enable Yarn through Corepack
+        run: |
+          corepack enable
+          corepack prepare yarn@4.9.2 --activate
+          yarn --version
+
+      - name: Install dependencies with Yarn
+        run: |
+          if [ -f yarn.lock ]; then
+            yarn install --immutable
+          else
+            echo "yarn.lock was not found; running yarn install to keep CI compatible."
+            echo "For stricter CI, run 'yarn install' locally, commit yarn.lock, then this workflow will use --immutable."
+            yarn install
+          fi
+
+      - run: yarn db:validate
+      - run: yarn postman:validate
+      - run: yarn audit:moderate
+      - run: yarn typecheck
+      - run: yarn build
+      - run: yarn test:unit
+      - run: yarn test:contracts
+      - run: yarn db:migrate
+      - run: yarn db:seed
+      - run: yarn test:smoke:db
+
       - name: Start API
         run: |
-          npm run start > /tmp/newspaper-api.log 2>&1 &
+          yarn start > /tmp/newspaper-api.log 2>&1 &
           echo $! > /tmp/newspaper-api.pid
           for i in {1..30}; do
             if curl -fsS http://localhost:3000/api/v1/health/live >/dev/null; then exit 0; fi
@@ -73,10 +91,17 @@ jobs:
           done
           cat /tmp/newspaper-api.log
           exit 1
-      - run: npm run test:smoke:http
-      - run: npm run test:security
-      - run: npm run start:worker:events:once
+
+      - run: yarn test:smoke:http
+      - run: yarn test:security
+      - run: yarn start:worker:events:once
+
       - name: Stop API
         if: always()
         run: |
           if [ -f /tmp/newspaper-api.pid ]; then kill $(cat /tmp/newspaper-api.pid) || true; fi
+
+      - name: Print API logs on failure
+        if: failure()
+        run: |
+          if [ -f /tmp/newspaper-api.log ]; then cat /tmp/newspaper-api.log; fi

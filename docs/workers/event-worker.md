@@ -7,13 +7,13 @@ El backend ya no depende solo del endpoint manual `POST /admin/events/dispatch-p
 Ejecutar una sola tanda:
 
 ```bash
-npm run start:worker:events:once
+yarn start:worker:events:once
 ```
 
 Ejecutar en modo loop:
 
 ```bash
-npm run start:worker:events
+yarn start:worker:events
 ```
 
 ## Variables

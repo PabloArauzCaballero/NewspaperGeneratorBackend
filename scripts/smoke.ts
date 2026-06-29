@@ -20,6 +20,11 @@ type DbCounts = {
   refresh_tokens_table_exists: string;
   login_attempts_table_exists: string;
   worker_runs_table_exists: string;
+  write_batches_table_exists: string;
+  write_batch_items_table_exists: string;
+  write_batches: string;
+  write_batch_items: string;
+  multi_item_write_batches: string;
 };
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -81,7 +86,12 @@ async function main() {
         (SELECT count(*) FROM information_schema.tables WHERE table_name = 'database_backup_runs')::text AS backup_table_exists,
         (SELECT count(*) FROM information_schema.tables WHERE table_name = 'user_refresh_tokens')::text AS refresh_tokens_table_exists,
         (SELECT count(*) FROM information_schema.tables WHERE table_name = 'auth_login_attempts')::text AS login_attempts_table_exists,
-        (SELECT count(*) FROM information_schema.tables WHERE table_name = 'worker_runs')::text AS worker_runs_table_exists;
+        (SELECT count(*) FROM information_schema.tables WHERE table_name = 'worker_runs')::text AS worker_runs_table_exists,
+        (SELECT count(*) FROM information_schema.tables WHERE table_name = 'api_write_batches')::text AS write_batches_table_exists,
+        (SELECT count(*) FROM information_schema.tables WHERE table_name = 'api_write_batch_items')::text AS write_batch_items_table_exists,
+        (SELECT count(*) FROM api_write_batches)::text AS write_batches,
+        (SELECT count(*) FROM api_write_batch_items)::text AS write_batch_items,
+        (SELECT count(*) FROM api_write_batches WHERE item_count >= 2)::text AS multi_item_write_batches;
       `,
       { type: QueryTypes.SELECT }
     );
@@ -103,6 +113,11 @@ async function main() {
     assert(Number(counts.refresh_tokens_table_exists) === 1, 'Expected user_refresh_tokens table for refresh token rotation');
     assert(Number(counts.login_attempts_table_exists) === 1, 'Expected auth_login_attempts table for security audit');
     assert(Number(counts.worker_runs_table_exists) === 1, 'Expected worker_runs table for event worker observability');
+    assert(Number(counts.write_batches_table_exists) === 1, 'Expected api_write_batches table for transactional batch observability');
+    assert(Number(counts.write_batch_items_table_exists) === 1, 'Expected api_write_batch_items table for row-level batch observability');
+    assert(Number(counts.write_batches) >= 1, 'Expected at least one persisted batch record');
+    assert(Number(counts.write_batch_items) >= 1, 'Expected at least one persisted batch item record');
+    assert(Number(counts.multi_item_write_batches) >= 1, 'Expected at least one multi-item batch to prove grouped transactional writes');
 
     const [passwordUser] = await sequelize.query<{ password_hash: string }>(
       `SELECT password_hash FROM users WHERE email = 'admin.demo@periodico.test' LIMIT 1`,

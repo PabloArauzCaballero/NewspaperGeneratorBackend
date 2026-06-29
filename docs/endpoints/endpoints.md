@@ -184,7 +184,7 @@ Documentación específica: `docs/cache/redis.md`.
 No es endpoint HTTP. Se ejecuta por CLI o GitHub Actions:
 
 ```bash
-npm run backup:neon
+yarn backup:neon
 ```
 
 Workflow:
@@ -206,13 +206,13 @@ Documentación específica: `docs/backup/neon-backup-job.md`.
 Smoke DB:
 
 ```bash
-npm run test:smoke:db
+yarn test:smoke:db
 ```
 
 Smoke HTTP:
 
 ```bash
-npm run test:smoke:http
+yarn test:smoke:http
 ```
 
 Postman:
@@ -263,6 +263,6 @@ Documentación específica:
 También existe CLI:
 
 ```bash
-npm run start:worker:events:once
-npm run start:worker:events
+yarn start:worker:events:once
+yarn start:worker:events
 ```

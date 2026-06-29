@@ -7,19 +7,19 @@ Este backend queda con una ruta clara para demostrar calidad real antes de entre
 Con PostgreSQL, Redis y el servidor levantado:
 
 ```bash
-npm run test:all
+yarn test:all
 ```
 
 Este comando ejecuta:
 
-1. `npm run typecheck`
-2. `npm run build`
-3. `npm run test:unit`
-4. `npm run test:contracts`
-5. `npm run test:smoke:db`
-6. `npm run test:smoke:http`
-7. `npm run test:security`
-8. `npm audit --audit-level=moderate`
+1. `yarn typecheck`
+2. `yarn build`
+3. `yarn test:unit`
+4. `yarn test:contracts`
+5. `yarn test:smoke:db`
+6. `yarn test:smoke:http`
+7. `yarn test:security`
+8. `yarn audit:moderate --audit-level=moderate`
 
 ## Preparación local desde cero
 
@@ -27,25 +27,25 @@ Este comando ejecuta:
 cp .env.example .env
 docker compose up -d postgres redis
 npm install
-npm run db:migrate
-npm run db:seed
-npm run typecheck
-npm run build
-npm run test:unit
-npm run test:contracts
-npm run db:validate
-npm run postman:validate
-npm audit --audit-level=moderate
-npm run test:smoke:db
-npm run start:dev
+yarn db:migrate
+yarn db:seed
+yarn typecheck
+yarn build
+yarn test:unit
+yarn test:contracts
+yarn db:validate
+yarn postman:validate
+yarn audit:moderate --audit-level=moderate
+yarn test:smoke:db
+yarn start:dev
 ```
 
 En otra terminal:
 
 ```bash
-npm run test:smoke:http
-npm run test:security
-npm run start:worker:events:once
+yarn test:smoke:http
+yarn test:security
+yarn start:worker:events:once
 ```
 
 ## Qué cubren las pruebas

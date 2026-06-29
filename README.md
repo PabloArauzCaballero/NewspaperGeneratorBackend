@@ -18,7 +18,7 @@ Backend NestJS para el **Periódico Digital Premium**. Esta versión queda endur
 - Refresh tokens opacos con rotación, logout, reset password y auditoría de intentos de login.
 - Worker CLI real para procesar outbox con lock Redis.
 - CI con PostgreSQL + Redis en GitHub Actions.
-- `npm audit --audit-level=moderate` queda limpio en esta entrega.
+- `yarn audit:moderate --audit-level=moderate` queda limpio en esta entrega.
 
 ## Módulos implementados
 
@@ -68,9 +68,9 @@ DemoPassword2026!
 cp .env.example .env
 docker compose up -d postgres redis
 npm install
-npm run db:migrate
-npm run db:seed
-npm run start:dev
+yarn db:migrate
+yarn db:seed
+yarn start:dev
 ```
 
 Servidor:
@@ -90,34 +90,34 @@ http://localhost:3000/api/v1/docs
 Primero valida sin servidor:
 
 ```bash
-npm run db:validate
-npm run postman:validate
-npm run typecheck
-npm run build
-npm run test:unit
-npm run test:contracts
-npm audit --audit-level=moderate
-npm run test:smoke:db
+yarn db:validate
+yarn postman:validate
+yarn typecheck
+yarn build
+yarn test:unit
+yarn test:contracts
+yarn audit:moderate --audit-level=moderate
+yarn test:smoke:db
 ```
 
 Luego levanta el servidor:
 
 ```bash
-npm run start:dev
+yarn start:dev
 ```
 
 En otra terminal ejecuta:
 
 ```bash
-npm run test:smoke:http
-npm run test:security
-npm run start:worker:events:once
+yarn test:smoke:http
+yarn test:security
+yarn start:worker:events:once
 ```
 
 Quality gate completo, con PostgreSQL + Redis + servidor levantado:
 
 ```bash
-npm run test:all
+yarn test:all
 ```
 
 En GitHub Actions, `.github/workflows/ci.yml` levanta PostgreSQL y Redis y ejecuta el quality gate automáticamente.
@@ -169,9 +169,9 @@ curl -X POST http://localhost:3000/api/v1/admin/events/dispatch-pending \
 Procesar outbox con worker real:
 
 ```bash
-npm run start:worker:events:once
+yarn start:worker:events:once
 # o en loop
-npm run start:worker:events
+yarn start:worker:events
 ```
 
 ## Auth de producción
@@ -216,7 +216,7 @@ Orden recomendado: Health → Auth → Fixtures → Público/Premium → Interac
 Configura un segundo proyecto/base Neon y coloca sus credenciales en `NEON_BACKUP_DATABASE_URL`.
 
 ```bash
-npm run backup:neon
+yarn backup:neon
 ```
 
 GitHub Actions queda en:
@@ -251,6 +251,39 @@ NEON_BACKUP_DATABASE_URL
 - No se creó endpoint para seedear desde HTTP. Los seeds se ejecutan por CLI.
 - Los precios de planes son demo.
 - El proveedor de pagos real todavía está pendiente si se requiere integración bancaria externa; el flujo demo mantiene idempotencia.
-- El dispatcher HTTP queda para operación/admin, pero producción debe usar `npm run start:worker:events` como proceso separado.
+- El dispatcher HTTP queda para operación/admin, pero producción debe usar `yarn start:worker:events` como proceso separado.
 - El job de backup a Neon requiere configurar un target de respaldo distinto a la base principal.
 - El cuerpo premium no se expone en listados, búsqueda ni publicidad.
+
+## Integridad atómica de endpoints
+
+Se reforzó la política de escritura para evitar datos fragmentados entre tablas. Revisa:
+
+```txt
+docs/quality/atomic-write-integrity.md
+```
+
+Los endpoints críticos que escriben en varias tablas ahora validan filas padre antes de tocar tablas hijas y agrupan mutación + auditoría + outbox en una misma transacción SQL. Para comprobar los contratos estáticos:
+
+```bash
+yarn test:contracts
+```
+
+## Integridad final: registros batch de escritura
+
+La versión final incluye observabilidad de escrituras agrupadas por transacción mediante:
+
+- `api_write_batches`
+- `api_write_batch_items`
+- triggers de base de datos por tabla de negocio
+- endpoint admin `GET /api/v1/admin/audit/write-batches`
+- validación en `yarn test:smoke:db`
+- contrato en `test/contracts/atomic-write-contracts.test.ts`
+
+Esto permite verificar que operaciones multi-tabla como registro de usuario, checkout de suscripción, publicación editorial, auditoría, outbox y tokens no queden como datos fragmentados sin trazabilidad.
+
+Consulta la documentación completa en:
+
+- `docs/quality/atomic-write-integrity.md`
+- `docs/quality/batch-write-records.md`
+- `docs/quality/final-consolidation-from-github-fix.md`

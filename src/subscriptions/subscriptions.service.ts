@@ -29,7 +29,7 @@ export class SubscriptionsService {
     });
   }
 
-  async me(userId: string) {
+  async me(userId: string, transaction?: Transaction) {
     const [subscription] = await this.sequelize.query(
       `
       SELECT s.id, s.status, s.starts_at AS "startsAt", s.ends_at AS "endsAt", s.cancelled_at AS "cancelledAt",
@@ -41,13 +41,14 @@ export class SubscriptionsService {
       ORDER BY s.created_at DESC
       LIMIT 1;
       `,
-      { replacements: { userId }, type: QueryTypes.SELECT }
+      { replacements: { userId }, type: QueryTypes.SELECT, transaction }
     );
     return subscription ?? { isPremium: false, subscription: null };
   }
 
   async checkout(dto: CheckoutDto, userId: string) {
     return this.sequelize.transaction(async (transaction) => {
+      await this.assertUserExists(userId, transaction);
       const [plan] = await this.sequelize.query<{ id: string; price: string; currency: string; duration_days: number }>(
         `SELECT id, price, currency, duration_days FROM subscription_plans WHERE id = :planId AND is_active = true LIMIT 1`,
         { replacements: { planId: dto.planId }, type: QueryTypes.SELECT, transaction }
@@ -80,42 +81,66 @@ export class SubscriptionsService {
   }
 
   async activateManual(dto: AdminActivateSubscriptionDto, actorUserId: string) {
-    const startsAt = dto.startsAt ? new Date(dto.startsAt) : new Date();
-    const plan = await this.getPlan(dto.planId);
-    const endsAt = dto.endsAt ? new Date(dto.endsAt) : new Date(startsAt.getTime() + plan.duration_days * 24 * 60 * 60 * 1000);
-    if (endsAt <= startsAt) throw new BadRequestException('endsAt must be after startsAt');
+    const result = await this.sequelize.transaction(async (transaction) => {
+      await this.assertUserExists(dto.userId, transaction);
+      const startsAt = dto.startsAt ? new Date(dto.startsAt) : new Date();
+      const plan = await this.getPlan(dto.planId, transaction);
+      const endsAt = dto.endsAt ? new Date(dto.endsAt) : new Date(startsAt.getTime() + plan.duration_days * 24 * 60 * 60 * 1000);
+      if (endsAt <= startsAt) throw new BadRequestException('endsAt must be after startsAt');
 
-    return this.sequelize.transaction(async (transaction) => {
+      await this.sequelize.query(
+        `UPDATE subscriptions SET status = 'cancelled', cancelled_at = now(), updated_at = now()
+         WHERE user_id = :userId AND status = 'active' AND starts_at <= now() AND ends_at > now()`,
+        { replacements: { userId: dto.userId }, type: QueryTypes.UPDATE, transaction }
+      );
+
       const [subscription] = await this.sequelize.query<{ id: string }>(
         `INSERT INTO subscriptions (user_id, plan_id, status, starts_at, ends_at) VALUES (:userId, :planId, 'active', :startsAt, :endsAt) RETURNING id`,
         { replacements: { userId: dto.userId, planId: dto.planId, startsAt, endsAt }, type: QueryTypes.SELECT, transaction }
       );
       await this.writeOutbox('SubscriptionActivated', 'Subscription', subscription.id, { subscriptionId: subscription.id, userId: dto.userId, source: 'manual_admin', reason: dto.reason }, transaction);
       await this.audit(actorUserId, subscription.id, 'subscription.manual_activated', dto, transaction);
-      await this.redisCache.deleteByPattern(this.redisCache.key('articles', '*'));
-      return this.me(dto.userId);
+      return { userId: dto.userId };
     });
+    await this.invalidateArticleCaches();
+    return this.me(result.userId);
   }
 
   async cancel(subscriptionId: string, dto: CancelSubscriptionDto, actorUserId: string) {
-    const [row] = await this.sequelize.query<{ id: string; user_id: string }>(
-      `UPDATE subscriptions SET status = 'cancelled', cancelled_at = now(), updated_at = now() WHERE id = :subscriptionId RETURNING id, user_id`,
-      { replacements: { subscriptionId }, type: QueryTypes.SELECT }
-    );
-    if (!row) throw new NotFoundException('Subscription not found');
-    await this.writeOutbox('SubscriptionCancelled', 'Subscription', subscriptionId, { subscriptionId, userId: row.user_id, reason: dto.reason ?? null });
-    await this.audit(actorUserId, subscriptionId, 'subscription.cancelled', dto);
-    await this.redisCache.deleteByPattern(this.redisCache.key('articles', '*'));
-    return this.me(row.user_id);
+    const result = await this.sequelize.transaction(async (transaction) => {
+      const [row] = await this.sequelize.query<{ id: string; user_id: string }>(
+        `UPDATE subscriptions SET status = 'cancelled', cancelled_at = now(), updated_at = now() WHERE id = :subscriptionId RETURNING id, user_id`,
+        { replacements: { subscriptionId }, type: QueryTypes.SELECT, transaction }
+      );
+      if (!row) throw new NotFoundException('Subscription not found');
+      await this.writeOutbox('SubscriptionCancelled', 'Subscription', subscriptionId, { subscriptionId, userId: row.user_id, reason: dto.reason ?? null }, transaction);
+      await this.audit(actorUserId, subscriptionId, 'subscription.cancelled', dto, transaction);
+      return { userId: row.user_id };
+    });
+    await this.invalidateArticleCaches();
+    return this.me(result.userId);
   }
 
-  private async getPlan(planId: string) {
+  private async getPlan(planId: string, transaction?: Transaction) {
     const [plan] = await this.sequelize.query<{ id: string; duration_days: number }>(
       `SELECT id, duration_days FROM subscription_plans WHERE id = :planId AND is_active = true LIMIT 1`,
-      { replacements: { planId }, type: QueryTypes.SELECT }
+      { replacements: { planId }, type: QueryTypes.SELECT, transaction }
     );
     if (!plan) throw new NotFoundException('Subscription plan not found');
     return plan;
+  }
+
+  private async assertUserExists(userId: string, transaction?: Transaction): Promise<void> {
+    const [row] = await this.sequelize.query<{ id: string }>(`SELECT id FROM users WHERE id = :userId LIMIT 1`, {
+      replacements: { userId },
+      type: QueryTypes.SELECT,
+      transaction
+    });
+    if (!row) throw new NotFoundException('User not found');
+  }
+
+  private async invalidateArticleCaches() {
+    await this.redisCache.deleteByPattern(this.redisCache.key('articles', '*'));
   }
 
   private async writeOutbox(eventType: string, aggregateType: string, aggregateId: string, payload: Record<string, unknown>, transaction?: Transaction) {

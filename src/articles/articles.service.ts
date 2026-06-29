@@ -173,7 +173,7 @@ export class ArticlesService {
     return rows.map((row) => ({ ...this.toListPayload(row), authorName: row.author_name }));
   }
 
-  async getAdmin(id: string) {
+  async getAdmin(id: string, transaction?: Transaction) {
     const [article] = await this.sequelize.query<ArticleDetailRow>(
       `
       SELECT a.id, a.author_id, a.category_id, a.title, a.slug, a.summary, a.body, a.audio_transcript, a.article_type,
@@ -192,7 +192,7 @@ export class ArticlesService {
       GROUP BY a.id, c.id, u.id, cover.id
       LIMIT 1;
       `,
-      { replacements: { id }, type: QueryTypes.SELECT }
+      { replacements: { id }, type: QueryTypes.SELECT, transaction }
     );
     if (!article) throw new NotFoundException('Article not found');
     return { ...this.toDetailBasePayload(article), body: article.body, audioTranscript: article.audio_transcript, authorId: article.author_id, categoryId: article.category_id, articleType: article.article_type };
@@ -212,8 +212,8 @@ export class ArticlesService {
       await this.createRevision(article.id, actorUser.id, dto.title, dto.body, 'Creación de borrador', transaction);
       await this.writeOutbox('ArticleDraftCreated', 'Article', article.id, { articleId: article.id, title: dto.title, accessType: dto.accessType }, transaction);
       await this.audit(actorUser.id, article.id, 'article.created', { status: 'draft' }, transaction);
-      await this.invalidateArticleCaches(article.id);
-      return this.getAdmin(article.id);
+      await this.invalidateArticleCaches(article.id, transaction);
+      return this.getAdmin(article.id, transaction);
     });
   }
 
@@ -241,8 +241,8 @@ export class ArticlesService {
       if (dto.title || dto.body) await this.createRevision(id, actorUser.id, dto.title ?? current.title, dto.body ?? current.body, dto.changeReason ?? 'Actualización editorial', transaction);
       await this.writeOutbox('ArticleUpdatedAfterPublication', 'Article', id, { articleId: id, wasPublished: current.status === 'published' }, transaction);
       await this.audit(actorUser.id, id, 'article.updated', dto, transaction);
-      await this.invalidateArticleCaches(id);
-      return this.getAdmin(id);
+      await this.invalidateArticleCaches(id, transaction);
+      return this.getAdmin(id, transaction);
     });
   }
 
@@ -257,8 +257,8 @@ export class ArticlesService {
       await this.sequelize.query(`UPDATE articles SET status = 'changes_requested', updated_at = now() WHERE id = :id`, { replacements: { id }, type: QueryTypes.UPDATE, transaction });
       await this.writeOutbox('ArticleChangesRequested', 'Article', id, { articleId: id, reason: dto.reason }, transaction);
       await this.audit(actorUser.id, id, 'article.changes_requested', dto, transaction);
-      await this.invalidateArticleCaches(id);
-      return this.getAdmin(id);
+      await this.invalidateArticleCaches(id, transaction);
+      return this.getAdmin(id, transaction);
     });
   }
 
@@ -270,8 +270,8 @@ export class ArticlesService {
       await this.sequelize.query(`UPDATE articles SET status = 'scheduled', published_at = :publishAt, updated_at = now() WHERE id = :id`, { replacements: { id, publishAt }, type: QueryTypes.UPDATE, transaction });
       await this.writeOutbox('ArticleScheduled', 'Article', id, { articleId: id, publishAt: dto.publishAt }, transaction);
       await this.audit(actorUser.id, id, 'article.scheduled', dto, transaction);
-      await this.invalidateArticleCaches(id);
-      return this.getAdmin(id);
+      await this.invalidateArticleCaches(id, transaction);
+      return this.getAdmin(id, transaction);
     });
   }
 
@@ -285,8 +285,8 @@ export class ArticlesService {
       if (current.access_type === 'premium') await this.writeOutbox('PremiumAdSlotsDisabled', 'Article', id, { articleId: id, reason: 'premium_articles_have_zero_ads' }, transaction);
       else await this.writeOutbox('PublicAdSlotsEnabled', 'Article', id, { articleId: id, reason: 'public_articles_allow_discreet_ads' }, transaction);
       await this.audit(actorUser.id, id, 'article.published', { eventType }, transaction);
-      await this.invalidateArticleCaches(id);
-      return this.getAdmin(id);
+      await this.invalidateArticleCaches(id, transaction);
+      return this.getAdmin(id, transaction);
     });
   }
 
@@ -306,8 +306,8 @@ export class ArticlesService {
         { replacements: { id, ...dto }, type: QueryTypes.INSERT, transaction }
       );
       await this.audit(actorUser.id, id, 'article.media_attached', dto, transaction);
-      await this.invalidateArticleCaches(id);
-      return this.getAdmin(id);
+      await this.invalidateArticleCaches(id, transaction);
+      return this.getAdmin(id, transaction);
     });
   }
 
@@ -390,13 +390,13 @@ export class ArticlesService {
       });
       await this.writeOutbox(eventType, 'Article', id, { articleId: id, status }, transaction);
       await this.audit(actorUser.id, id, action, { status }, transaction);
-      await this.invalidateArticleCaches(id);
-      return this.getAdmin(id);
+      await this.invalidateArticleCaches(id, transaction);
+      return this.getAdmin(id, transaction);
     });
   }
 
 
-  private async invalidateArticleCaches(articleId?: string): Promise<void> {
+  private async invalidateArticleCaches(articleId?: string, transaction?: Transaction): Promise<void> {
     await this.redisCache.deleteManyByPattern([
       this.redisCache.key('articles', '*'),
       this.redisCache.key('ads', '*'),
@@ -405,7 +405,7 @@ export class ArticlesService {
     if (articleId) {
       await this.sequelize.query(
         `INSERT INTO cache_invalidation_jobs (entity_name, entity_id, reason, status, processed_at) VALUES ('Article', :articleId, 'article mutation invalidated redis public/article caches', 'processed', now())`,
-        { replacements: { articleId }, type: QueryTypes.INSERT }
+        { replacements: { articleId }, type: QueryTypes.INSERT, transaction }
       ).catch(() => undefined);
     }
   }

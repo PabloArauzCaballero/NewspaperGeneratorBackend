@@ -38,15 +38,22 @@ export class SecurityAdminService {
   }
 
   async revokeRefreshTokens(userId: string, actorUserId: string) {
-    const [, affected] = await this.sequelize.query(
-      `UPDATE user_refresh_tokens SET revoked_at = now() WHERE user_id = :userId AND revoked_at IS NULL`,
-      { replacements: { userId }, type: QueryTypes.UPDATE }
-    );
-    await this.sequelize.query(
-      `INSERT INTO audit_logs (actor_user_id, entity_name, entity_id, action, metadata) VALUES (:actorUserId, 'User', :userId, 'auth.refresh_tokens_revoked', jsonb_build_object('affected', :affected))`,
-      { replacements: { actorUserId, userId, affected: Number(affected) || 0 }, type: QueryTypes.INSERT }
-    );
-    return { userId, revoked: Number(affected) || 0 };
+    return this.sequelize.transaction(async (transaction) => {
+      const [user] = await this.sequelize.query<{ id: string }>(`SELECT id FROM users WHERE id = :userId LIMIT 1`, {
+        replacements: { userId }, type: QueryTypes.SELECT, transaction
+      });
+      if (!user) return { userId, revoked: 0 };
+
+      const [, affected] = await this.sequelize.query(
+        `UPDATE user_refresh_tokens SET revoked_at = now() WHERE user_id = :userId AND revoked_at IS NULL`,
+        { replacements: { userId }, type: QueryTypes.UPDATE, transaction }
+      );
+      await this.sequelize.query(
+        `INSERT INTO audit_logs (actor_user_id, entity_name, entity_id, action, metadata) VALUES (:actorUserId, 'User', :userId, 'auth.refresh_tokens_revoked', jsonb_build_object('affected', :affected))`,
+        { replacements: { actorUserId, userId, affected: Number(affected) || 0 }, type: QueryTypes.INSERT, transaction }
+      );
+      return { userId, revoked: Number(affected) || 0 };
+    });
   }
 
   async listWorkerRuns(query: WorkerRunsQueryDto) {

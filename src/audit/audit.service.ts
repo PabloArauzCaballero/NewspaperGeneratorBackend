@@ -19,4 +19,46 @@ export class AuditService {
       { type: QueryTypes.SELECT }
     );
   }
+
+  async listWriteBatches() {
+    return this.sequelize.query(
+      `
+      SELECT
+        wb.id,
+        wb.transaction_id AS "transactionId",
+        wb.batch_source AS "batchSource",
+        wb.batch_type AS "batchType",
+        wb.status,
+        wb.endpoint,
+        wb.http_method AS "httpMethod",
+        wb.aggregate_type AS "aggregateType",
+        wb.aggregate_id AS "aggregateId",
+        wb.affected_tables AS "affectedTables",
+        wb.item_count AS "itemCount",
+        wb.started_at AS "startedAt",
+        wb.finished_at AS "finishedAt",
+        wb.metadata,
+        COALESCE(
+          jsonb_agg(
+            jsonb_build_object(
+              'id', wbi.id,
+              'tableName', wbi.table_name,
+              'action', wbi.action,
+              'recordId', wbi.record_id,
+              'ordinal', wbi.ordinal,
+              'createdAt', wbi.created_at
+            ) ORDER BY wbi.ordinal
+          ) FILTER (WHERE wbi.id IS NOT NULL),
+          '[]'::jsonb
+        ) AS items
+      FROM api_write_batches wb
+      LEFT JOIN api_write_batch_items wbi ON wbi.batch_id = wb.id
+      GROUP BY wb.id
+      ORDER BY wb.started_at DESC
+      LIMIT 150;
+      `,
+      { type: QueryTypes.SELECT }
+    );
+  }
+
 }

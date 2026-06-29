@@ -5,6 +5,7 @@ import { AdSlotsQueryDto, CreateAdvertisementDto, UpdateAdvertisementDto } from 
 
 type ArticleAccessRow = { id: string; slug: string; access_type: 'public' | 'premium' | 'internal_only'; category_id: string };
 type AdRow = { id: string; title: string; image_url: string; target_url: string; placement_code: string; placement_name: string };
+type AdWindowRow = { id: string; starts_at: Date | string; ends_at: Date | string };
 
 @Injectable()
 export class AdsService {
@@ -89,6 +90,8 @@ export class AdsService {
     if (endsAt <= startsAt) throw new BadRequestException('endsAt must be after startsAt');
 
     return this.sequelize.transaction(async (transaction) => {
+      await this.assertPlacementExists(dto.placementId, transaction);
+      await this.assertCategoriesExist(dto.categoryIds, transaction);
       const [row] = await this.sequelize.query<{ id: string }>(
         `
         INSERT INTO advertisements (placement_id, title, image_url, target_url, status, starts_at, ends_at)
@@ -105,6 +108,14 @@ export class AdsService {
 
   async update(id: string, dto: UpdateAdvertisementDto, actorUserId: string) {
     return this.sequelize.transaction(async (transaction) => {
+      const current = await this.getWindowForMutation(id, transaction);
+      if (dto.placementId) await this.assertPlacementExists(dto.placementId, transaction);
+      if (dto.categoryIds !== undefined) await this.assertCategoriesExist(dto.categoryIds, transaction);
+
+      const nextStartsAt = dto.startsAt !== undefined ? new Date(dto.startsAt) : new Date(current.starts_at);
+      const nextEndsAt = dto.endsAt !== undefined ? new Date(dto.endsAt) : new Date(current.ends_at);
+      if (nextEndsAt <= nextStartsAt) throw new BadRequestException('endsAt must be after startsAt');
+
       const fields: string[] = [];
       const replacements: Record<string, unknown> = { id };
       const mapping: Array<[keyof UpdateAdvertisementDto, string, string]> = [
@@ -113,8 +124,8 @@ export class AdsService {
       for (const [dtoKey, column, replKey] of mapping) {
         if (dto[dtoKey] !== undefined) { fields.push(`${column} = :${replKey}`); replacements[replKey] = dto[dtoKey]; }
       }
-      if (dto.startsAt !== undefined) { fields.push('starts_at = :startsAt'); replacements.startsAt = new Date(dto.startsAt); }
-      if (dto.endsAt !== undefined) { fields.push('ends_at = :endsAt'); replacements.endsAt = new Date(dto.endsAt); }
+      if (dto.startsAt !== undefined) { fields.push('starts_at = :startsAt'); replacements.startsAt = nextStartsAt; }
+      if (dto.endsAt !== undefined) { fields.push('ends_at = :endsAt'); replacements.endsAt = nextEndsAt; }
       if (fields.length) await this.sequelize.query(`UPDATE advertisements SET ${fields.join(', ')}, updated_at = now() WHERE id = :id`, { replacements, type: QueryTypes.UPDATE, transaction });
       if (dto.categoryIds !== undefined) await this.replaceTargets(id, dto.categoryIds, transaction);
       await this.audit(actorUserId, id, 'advertisement.updated', dto, transaction);
@@ -126,12 +137,14 @@ export class AdsService {
   async pause(id: string, actorUserId: string) { return this.setStatus(id, 'paused', actorUserId); }
 
   private async setStatus(id: string, status: string, actorUserId: string) {
-    const [row] = await this.sequelize.query<{ id: string }>(`UPDATE advertisements SET status = :status, updated_at = now() WHERE id = :id RETURNING id`, {
-      replacements: { id, status }, type: QueryTypes.SELECT
+    return this.sequelize.transaction(async (transaction) => {
+      const [row] = await this.sequelize.query<{ id: string }>(`UPDATE advertisements SET status = :status, updated_at = now() WHERE id = :id RETURNING id`, {
+        replacements: { id, status }, type: QueryTypes.SELECT, transaction
+      });
+      if (!row) throw new NotFoundException('Advertisement not found');
+      await this.audit(actorUserId, id, `advertisement.${status}`, { status }, transaction);
+      return this.getAdmin(id, transaction);
     });
-    if (!row) throw new NotFoundException('Advertisement not found');
-    await this.audit(actorUserId, id, `advertisement.${status}`, { status });
-    return this.getAdmin(id);
   }
 
   private async getAdmin(id: string, transaction?: Transaction) {
@@ -153,6 +166,30 @@ export class AdsService {
     );
     if (!row) throw new NotFoundException('Advertisement not found');
     return row;
+  }
+
+  private async getWindowForMutation(id: string, transaction?: Transaction): Promise<AdWindowRow> {
+    const [row] = await this.sequelize.query<AdWindowRow>(
+      `SELECT id, starts_at, ends_at FROM advertisements WHERE id = :id LIMIT 1 FOR UPDATE`,
+      { replacements: { id }, type: QueryTypes.SELECT, transaction }
+    );
+    if (!row) throw new NotFoundException('Advertisement not found');
+    return row;
+  }
+
+  private async assertPlacementExists(placementId: string, transaction?: Transaction) {
+    const [row] = await this.sequelize.query<{ id: string }>(`SELECT id FROM advertisement_placements WHERE id = :placementId LIMIT 1`, {
+      replacements: { placementId }, type: QueryTypes.SELECT, transaction
+    });
+    if (!row) throw new NotFoundException('Advertisement placement not found');
+  }
+
+  private async assertCategoriesExist(categoryIds: string[], transaction?: Transaction) {
+    if (categoryIds.length === 0) return;
+    const rows = await this.sequelize.query<{ id: string }>(`SELECT id FROM categories WHERE id IN (:categoryIds)`, {
+      replacements: { categoryIds }, type: QueryTypes.SELECT, transaction
+    });
+    if (rows.length !== new Set(categoryIds).size) throw new NotFoundException('One or more advertisement target categories were not found');
   }
 
   private async replaceTargets(advertisementId: string, categoryIds: string[], transaction?: Transaction) {

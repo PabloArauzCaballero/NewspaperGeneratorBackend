@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { QueryTypes, Sequelize } from 'sequelize';
 import { RedisCacheService } from '../cache/redis-cache.service';
 import { SEQUELIZE } from '../database/database.constants';
@@ -19,6 +19,11 @@ export class CacheInvalidationService {
   }
 
   async invalidateArticle(articleId: string, dto: InvalidateCacheDto, userId: string) {
+    const [article] = await this.sequelize.query<{ id: string }>(`SELECT id FROM articles WHERE id = :articleId LIMIT 1`, {
+      replacements: { articleId }, type: QueryTypes.SELECT
+    });
+    if (!article) throw new NotFoundException('Article not found');
+
     const deletedKeys = await this.redisCache.deleteManyByPattern([
       this.redisCache.key('articles', '*'),
       this.redisCache.key('ads', '*'),

@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { QueryTypes, Sequelize } from 'sequelize';
+import { QueryTypes, Sequelize, Transaction } from 'sequelize';
 import { SEQUELIZE } from '../database/database.constants';
 import { CreatePermissionDto } from './roles-permissions.schemas';
 
@@ -42,42 +42,55 @@ export class RolesPermissionsService {
       );
       return row;
     } catch (error) {
-      throw new ConflictException('Permission already exists');
+      if (error instanceof Error && /permissions_code|unique|duplicate key/i.test(error.message)) throw new ConflictException('Permission already exists');
+      throw error;
     }
   }
 
   async assignPermission(roleName: string, permissionCode: string) {
-    const [role] = await this.sequelize.query<{ id: string }>('SELECT id FROM roles WHERE name = :roleName LIMIT 1', {
-      replacements: { roleName },
-      type: QueryTypes.SELECT
+    await this.sequelize.transaction(async (transaction) => {
+      const role = await this.getRoleByName(roleName, transaction);
+      const permission = await this.getPermissionByCode(permissionCode, transaction);
+      await this.sequelize.query(
+        `INSERT INTO role_permissions (role_id, permission_id) VALUES (:roleId, :permissionId) ON CONFLICT (role_id, permission_id) DO NOTHING`,
+        { replacements: { roleId: role.id, permissionId: permission.id }, type: QueryTypes.INSERT, transaction }
+      );
     });
-    if (!role) throw new NotFoundException('Role not found');
-
-    const [permission] = await this.sequelize.query<{ id: string }>('SELECT id FROM permissions WHERE code = :permissionCode LIMIT 1', {
-      replacements: { permissionCode },
-      type: QueryTypes.SELECT
-    });
-    if (!permission) throw new NotFoundException('Permission not found');
-
-    await this.sequelize.query(
-      `INSERT INTO role_permissions (role_id, permission_id) VALUES (:roleId, :permissionId) ON CONFLICT (role_id, permission_id) DO NOTHING`,
-      { replacements: { roleId: role.id, permissionId: permission.id }, type: QueryTypes.INSERT }
-    );
     return this.listRoles();
   }
 
   async removePermission(roleName: string, permissionCode: string) {
-    await this.sequelize.query(
-      `
-      DELETE FROM role_permissions rp
-      USING roles r, permissions p
-      WHERE rp.role_id = r.id
-        AND rp.permission_id = p.id
-        AND r.name = :roleName
-        AND p.code = :permissionCode;
-      `,
-      { replacements: { roleName, permissionCode }, type: QueryTypes.DELETE }
-    );
+    await this.sequelize.transaction(async (transaction) => {
+      await this.getRoleByName(roleName, transaction);
+      await this.getPermissionByCode(permissionCode, transaction);
+      await this.sequelize.query(
+        `
+        DELETE FROM role_permissions rp
+        USING roles r, permissions p
+        WHERE rp.role_id = r.id
+          AND rp.permission_id = p.id
+          AND r.name = :roleName
+          AND p.code = :permissionCode;
+        `,
+        { replacements: { roleName, permissionCode }, type: QueryTypes.DELETE, transaction }
+      );
+    });
     return this.listRoles();
+  }
+
+  private async getRoleByName(roleName: string, transaction?: Transaction): Promise<{ id: string }> {
+    const [role] = await this.sequelize.query<{ id: string }>('SELECT id FROM roles WHERE name = :roleName LIMIT 1', {
+      replacements: { roleName }, type: QueryTypes.SELECT, transaction
+    });
+    if (!role) throw new NotFoundException('Role not found');
+    return role;
+  }
+
+  private async getPermissionByCode(permissionCode: string, transaction?: Transaction): Promise<{ id: string }> {
+    const [permission] = await this.sequelize.query<{ id: string }>('SELECT id FROM permissions WHERE code = :permissionCode LIMIT 1', {
+      replacements: { permissionCode }, type: QueryTypes.SELECT, transaction
+    });
+    if (!permission) throw new NotFoundException('Permission not found');
+    return permission;
   }
 }

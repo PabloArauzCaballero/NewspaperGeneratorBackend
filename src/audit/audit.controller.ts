@@ -13,4 +13,7 @@ export class AuditAdminController {
   constructor(private readonly service: AuditService) {}
   @Get('logs')
   list() { return this.service.list(); }
+
+  @Get('write-batches')
+  listWriteBatches() { return this.service.listWriteBatches(); }
 }

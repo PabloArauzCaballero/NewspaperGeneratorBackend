@@ -13,9 +13,9 @@ postman/NewspaperGeneratorBackend.local.postman_environment.json
 
 ```bash
 docker compose up -d postgres redis
-npm run db:migrate
-npm run db:seed
-npm run start:dev
+yarn db:migrate
+yarn db:seed
+yarn start:dev
 ```
 
 2. Importa en Postman:
@@ -86,5 +86,5 @@ La colección ahora incluye:
 Valida la colección con:
 
 ```bash
-npm run postman:validate
+yarn postman:validate
 ```

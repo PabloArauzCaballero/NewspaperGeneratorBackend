@@ -18,7 +18,8 @@ describe('repository delivery contracts', () => {
       '/admin/events/dispatch-pending',
       '/admin/cache-invalidation/articles/',
       '/admin/security/login-attempts',
-      '/admin/security/worker-runs'
+      '/admin/security/worker-runs',
+      '/admin/audit/write-batches'
     ]) {
       assert.ok(raw.includes(fragment), `Missing Postman fragment ${fragment}`);
     }
@@ -28,6 +29,7 @@ describe('repository delivery contracts', () => {
     const migrationsDir = path.join(root, 'database/migrations');
     const files = fs.readdirSync(migrationsDir).filter((file) => file.endsWith('.js')).sort();
     assert.ok(files.some((file) => file.includes('production-hardening-auth-worker')), 'Missing production hardening migration');
+    assert.ok(files.some((file) => file.includes('create-api-write-batches')), 'Missing API write batch observability migration');
     const coreMigration = fs.readFileSync(path.join(migrationsDir, '20260627000100-create-newspaper-core-schema.js'), 'utf8');
     const eventInboxBlock = coreMigration.match(/CREATE TABLE IF NOT EXISTS event_inbox \([\s\S]*?\);/)?.[0] ?? '';
     const lastErrorMatches = eventInboxBlock.match(/last_error text/g) ?? [];
@@ -36,6 +38,14 @@ describe('repository delivery contracts', () => {
     assert.ok(hardening.includes('user_refresh_tokens'));
     assert.ok(hardening.includes('auth_login_attempts'));
     assert.ok(hardening.includes('worker_runs'));
+    const batch = fs.readFileSync(path.join(migrationsDir, '20260627000700-create-api-write-batches.js'), 'utf8');
+    assert.ok(batch.includes('api_write_batches'));
+    assert.ok(batch.includes('api_write_batch_items'));
+    assert.ok(batch.includes('record_api_write_batch_item'));
+    assert.ok(batch.includes('txid_current()'));
+    assert.ok(batch.includes('user_refresh_tokens'));
+    assert.ok(batch.includes('event_outbox'));
+    assert.ok(batch.includes('audit_logs')); 
   });
 
   it('package exposes a single command that proves quality end to end', () => {

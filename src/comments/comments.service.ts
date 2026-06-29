@@ -26,6 +26,9 @@ export class CommentsService {
   async create(articleId: string, dto: CreateCommentDto, user: AuthenticatedUser) {
     await this.assertArticleCanComment(articleId, user);
     return this.sequelize.transaction(async (transaction) => {
+      if (dto.parentCommentId) {
+        await this.assertParentCommentBelongsToArticle(dto.parentCommentId, articleId, transaction);
+      }
       const [row] = await this.sequelize.query<{ id: string }>(
         `
         INSERT INTO comments (article_id, user_id, parent_comment_id, content, status)
@@ -69,6 +72,15 @@ export class CommentsService {
       );
       return this.getAdmin(commentId, transaction);
     });
+  }
+
+
+  private async assertParentCommentBelongsToArticle(parentCommentId: string, articleId: string, transaction?: Transaction): Promise<void> {
+    const [row] = await this.sequelize.query<{ id: string }>(
+      `SELECT id FROM comments WHERE id = :parentCommentId AND article_id = :articleId LIMIT 1`,
+      { replacements: { parentCommentId, articleId }, type: QueryTypes.SELECT, transaction }
+    );
+    if (!row) throw new NotFoundException('Parent comment not found for this article');
   }
 
   private async getAdmin(commentId: string, transaction?: Transaction) {

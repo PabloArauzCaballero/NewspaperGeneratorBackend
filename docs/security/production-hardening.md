@@ -54,7 +54,7 @@ RATE_LIMIT_READ_MAX=300
 Con el servidor levantado:
 
 ```bash
-npm run test:security
+yarn test:security
 ```
 
 Ese smoke valida headers, request id, formato de errores y rate limiting de autenticación.

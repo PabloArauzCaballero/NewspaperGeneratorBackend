@@ -49,56 +49,63 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto, metadata: RequestMetadata = {}): Promise<AuthResponse> {
-    const existing = await this.sequelize.query<{ id: string }>('SELECT id FROM users WHERE email = :email LIMIT 1', {
-      replacements: { email: dto.email },
-      type: QueryTypes.SELECT
-    });
-
-    if (existing.length > 0) {
-      throw new ConflictException('Email is already registered');
-    }
-
     const rounds = this.configService.get<number>('BCRYPT_ROUNDS', 10);
     const passwordHash = await bcrypt.hash(dto.password, rounds);
 
-    const result = await this.sequelize.transaction(async (transaction) => {
-      const [user] = await this.sequelize.query<UserAuthRow>(
-        `
-        INSERT INTO users (full_name, email, password_hash, status, email_verified_at)
-        VALUES (:fullName, :email, :passwordHash, 'active', now())
-        RETURNING id, full_name, email, password_hash, status, ARRAY[]::text[] AS roles;
-        `,
-        {
-          replacements: { fullName: dto.fullName, email: dto.email, passwordHash },
+    try {
+      return await this.sequelize.transaction(async (transaction) => {
+        const existing = await this.sequelize.query<{ id: string }>(
+          'SELECT id FROM users WHERE email = :email LIMIT 1 FOR UPDATE',
+          { replacements: { email: dto.email }, type: QueryTypes.SELECT, transaction }
+        );
+
+        if (existing.length > 0) {
+          throw new ConflictException('Email is already registered');
+        }
+
+        const [readerRole] = await this.sequelize.query<{ id: string }>('SELECT id FROM roles WHERE name = :name LIMIT 1', {
+          replacements: { name: 'reader' },
           type: QueryTypes.SELECT,
           transaction
+        });
+        if (!readerRole) {
+          throw new Error('Seed integrity error: reader role is required before registering users');
         }
-      );
 
-      const [readerRole] = await this.sequelize.query<{ id: string }>('SELECT id FROM roles WHERE name = :name LIMIT 1', {
-        replacements: { name: 'reader' },
-        type: QueryTypes.SELECT,
-        transaction
-      });
+        const [user] = await this.sequelize.query<UserAuthRow>(
+          `
+          INSERT INTO users (full_name, email, password_hash, status, email_verified_at)
+          VALUES (:fullName, :email, :passwordHash, 'active', now())
+          RETURNING id, full_name, email, password_hash, status, ARRAY[:readerRole]::text[] AS roles;
+          `,
+          {
+            replacements: { fullName: dto.fullName, email: dto.email, passwordHash, readerRole: 'reader' },
+            type: QueryTypes.SELECT,
+            transaction
+          }
+        );
 
-      if (readerRole) {
         await this.sequelize.query(
-          `INSERT INTO user_roles (user_id, role_id) VALUES (:userId, :roleId) ON CONFLICT (user_id, role_id) DO NOTHING`,
+          `INSERT INTO user_roles (user_id, role_id) VALUES (:userId, :roleId)`,
           {
             replacements: { userId: user.id, roleId: readerRole.id },
             type: QueryTypes.INSERT,
             transaction
           }
         );
+
+        await this.writeLoginAttempt(dto.email, user.id, true, null, metadata, transaction);
+        await this.writeOutbox('UserRegistered', 'User', user.id, { email: user.email }, transaction);
+        const refreshToken = await this.createRefreshToken(user.id, metadata, transaction);
+        return this.buildAuthResponse({ ...user, roles: ['reader'] }, refreshToken.rawToken);
+      });
+    } catch (error) {
+      if (error instanceof ConflictException) throw error;
+      if (error instanceof Error && /users_email|unique|duplicate key/i.test(error.message)) {
+        throw new ConflictException('Email is already registered');
       }
-
-      await this.writeLoginAttempt(dto.email, user.id, true, null, metadata, transaction);
-      await this.writeOutbox('UserRegistered', 'User', user.id, { email: user.email }, transaction);
-
-      return { ...user, roles: ['reader'] };
-    });
-
-    return this.toAuthResponse(result, metadata);
+      throw error;
+    }
   }
 
   async login(dto: LoginDto, metadata: RequestMetadata = {}): Promise<AuthResponse> {
@@ -124,16 +131,16 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    await this.sequelize.transaction(async (transaction) => {
+    return this.sequelize.transaction(async (transaction) => {
       await this.sequelize.query(
         `UPDATE users SET failed_login_attempts = 0, locked_until = null, updated_at = now() WHERE id = :userId`,
         { replacements: { userId: user.id }, type: QueryTypes.UPDATE, transaction }
       );
       await this.writeLoginAttempt(user.email, user.id, true, null, metadata, transaction);
       await this.writeOutbox('UserLoggedIn', 'User', user.id, { email: user.email }, transaction);
+      const refreshToken = await this.createRefreshToken(user.id, metadata, transaction);
+      return this.buildAuthResponse(user, refreshToken.rawToken);
     });
-
-    return this.toAuthResponse(user, metadata);
   }
 
   async refresh(refreshToken: string, metadata: RequestMetadata = {}): Promise<AuthResponse> {
@@ -173,14 +180,7 @@ export class AuthService {
         `UPDATE user_refresh_tokens SET revoked_at = now(), replaced_by_token_id = :replacementId, last_used_at = now() WHERE id = :oldId`,
         { replacements: { replacementId: replacement.id, oldId: row.id }, type: QueryTypes.UPDATE, transaction }
       );
-      const accessToken = this.signAccessToken(user);
-      return {
-        user: this.toPublicUser(user),
-        accessToken,
-        refreshToken: replacement.rawToken,
-        tokenType: 'Bearer',
-        expiresIn: this.configService.get<string>('JWT_EXPIRES_IN', '15m')
-      };
+      return this.buildAuthResponse(user, replacement.rawToken);
     });
   }
 
@@ -348,17 +348,14 @@ export class AuthService {
     );
   }
 
-  private toAuthResponse(user: UserAuthRow, metadata: RequestMetadata): Promise<AuthResponse> {
-    return this.sequelize.transaction(async (transaction) => {
-      const refreshToken = await this.createRefreshToken(user.id, metadata, transaction);
-      return {
-        user: this.toPublicUser(user),
-        accessToken: this.signAccessToken(user),
-        refreshToken: refreshToken.rawToken,
-        tokenType: 'Bearer',
-        expiresIn: this.configService.get<string>('JWT_EXPIRES_IN', '15m')
-      };
-    });
+  private buildAuthResponse(user: UserAuthRow, refreshToken: string): AuthResponse {
+    return {
+      user: this.toPublicUser(user),
+      accessToken: this.signAccessToken(user),
+      refreshToken,
+      tokenType: 'Bearer',
+      expiresIn: this.configService.get<string>('JWT_EXPIRES_IN', '15m')
+    };
   }
 
   private toPublicUser(user: UserAuthRow): PublicUser {
