@@ -1,48 +1,63 @@
-name: Backup primary PostgreSQL to Neon backup project
+name: Neon Database Backup
 
 on:
   workflow_dispatch:
   schedule:
-    # Daily at 03:20 UTC. Adjust after choosing final production maintenance window.
-    - cron: '20 3 * * *'
+    - cron: "0 7 * * *"
 
 jobs:
-  backup-to-neon:
+  neon-backup:
+    name: Backup production DB to Neon backup DB
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+
+    environment: production
+
+    env:
+      NODE_ENV: production
+
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      NEON_BACKUP_DATABASE_URL: ${{ secrets.NEON_BACKUP_DATABASE_URL }}
+
+      DATABASE_SSL: true
+      BACKUP_CONFIRM_REMOTE_NEON: true
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 22 LTS
+      - name: Use Node.js 22 LTS
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: yarn
 
-      - name: Enable Yarn through Corepack
+      - name: Enable Yarn
         run: |
           corepack enable
           corepack prepare yarn@4.9.2 --activate
           yarn --version
 
       - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
-
-      - name: Install dependencies with Yarn
         run: |
-          if [ -f yarn.lock ]; then
-            yarn install --immutable
-          else
-            yarn install
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Verify required secrets
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "DATABASE_URL is missing"
+            exit 1
           fi
 
-      - name: Run backup job
-        env:
-          NODE_ENV: production
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DATABASE_SSL: 'true'
-          NEON_BACKUP_DATABASE_URL: ${{ secrets.NEON_BACKUP_DATABASE_URL }}
-          BACKUP_FILE_DIR: ./backups
-          BACKUP_KEEP_LOCAL_FILES: 'false'
-          NEON_BACKUP_DROP_TARGET_BEFORE_RESTORE: 'false'
+          if [ -z "$NEON_BACKUP_DATABASE_URL" ]; then
+            echo "NEON_BACKUP_DATABASE_URL is missing"
+            exit 1
+          fi
+
+          echo "Required database secrets are configured."
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Run Neon backup
         run: yarn backup:neon
